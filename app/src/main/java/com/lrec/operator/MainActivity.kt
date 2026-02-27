@@ -1,14 +1,17 @@
 package com.lrec.operator
 
-import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import android.widget.Button
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.view.GravityCompat
+import androidx.drawerlayout.widget.DrawerLayout
 import androidx.media3.common.MediaItem
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import com.google.android.material.appbar.MaterialToolbar
+import com.google.android.material.navigation.NavigationView
 
 class MainActivity : AppCompatActivity() {
 
@@ -26,13 +29,35 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         val playerView = findViewById<PlayerView>(R.id.playerView)
-        val btnPick = findViewById<Button>(R.id.btnPickVideo)
+        val drawerLayout = findViewById<DrawerLayout>(R.id.drawerLayout)
+        val navigationView = findViewById<NavigationView>(R.id.navigationView)
+        val toolbar = findViewById<MaterialToolbar>(R.id.toolbar)
+
+        setSupportActionBar(toolbar)
+
+        toolbar.setNavigationOnClickListener {
+            drawerLayout.openDrawer(GravityCompat.START)
+        }
 
         player = ExoPlayer.Builder(this).build()
         playerView.player = player
 
-        btnPick.setOnClickListener {
-            pickVideo.launch("video/*")
+        navigationView.setNavigationItemSelectedListener { item ->
+            when (item.itemId) {
+                R.id.nav_pick -> {
+                    pickVideo.launch("video/*")
+                }
+                R.id.nav_speed -> {
+                    player?.setPlaybackSpeed(1.5f)
+                }
+                R.id.nav_theme -> {
+                    AppCompatDelegate.setDefaultNightMode(
+                        AppCompatDelegate.MODE_NIGHT_YES
+                    )
+                }
+            }
+            drawerLayout.closeDrawer(GravityCompat.START)
+            true
         }
     }
 
