@@ -8,4 +8,7 @@
 
     <color name="player_control_bg">#66000000</color>
 
+    <!-- Added to prevent future theme errors -->
+    <color name="md_theme_light_onPrimary">#FFFFFF</color>
+
 </resources>
