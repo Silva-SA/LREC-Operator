@@ -13,15 +13,12 @@
             android:id="@+id/playerView"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
+            app:use_controller="true"
             app:show_shuffle_button="true"
-            app:controller_auto_show="true"
-            app:controller_show_timeout="3000"
-            app:fastforward_increment="10000"
-            app:rewind_increment="10000"
             app:use_artwork="false"
-            android:background="#000000"/>
+            android:background="#000000" />
 
-        <!-- Surface overlay controls -->
+        <!-- Custom Controls Overlay -->
         <LinearLayout
             android:id="@+id/playerControls"
             android:orientation="horizontal"
@@ -29,6 +26,7 @@
             android:layout_height="wrap_content"
             android:layout_gravity="bottom"
             android:padding="16dp"
+            android:gravity="center"
             android:background="@color/player_control_bg">
 
             <ImageButton
@@ -37,7 +35,7 @@
                 android:layout_height="wrap_content"
                 android:src="@drawable/ic_rewind"
                 android:background="@null"
-                android:tint="@color/md_theme_light_onPrimary"/>
+                android:tint="@android:color/white"/>
 
             <ImageButton
                 android:id="@+id/btnPlayPause"
@@ -45,7 +43,7 @@
                 android:layout_height="wrap_content"
                 android:src="@drawable/ic_play"
                 android:background="@null"
-                android:tint="@color/md_theme_light_onPrimary"/>
+                android:tint="@android:color/white"/>
 
             <ImageButton
                 android:id="@+id/btnForward"
@@ -53,7 +51,7 @@
                 android:layout_height="wrap_content"
                 android:src="@drawable/ic_forward"
                 android:background="@null"
-                android:tint="@color/md_theme_light_onPrimary"/>
+                android:tint="@android:color/white"/>
 
         </LinearLayout>
 
