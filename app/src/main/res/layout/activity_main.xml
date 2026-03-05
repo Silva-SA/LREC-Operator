@@ -161,7 +161,7 @@
 
             <!-- زر القائمة -->
             <ImageButton
-                android:id="@+id/btnMenu"
+                android:id="@+id/btnPlayerMenu"
                 android:layout_width="48dp"
                 android:layout_height="48dp"
                 android:src="@drawable/ic_menu"
