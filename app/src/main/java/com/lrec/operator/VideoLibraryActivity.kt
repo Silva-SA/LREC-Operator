@@ -4,11 +4,11 @@ import android.Manifest
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.database.Cursor
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.provider.MediaStore
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -21,7 +21,9 @@ import androidx.core.view.GravityCompat
 import androidx.drawerlayout.widget.DrawerLayout
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import android.provider.MediaStore
 import com.google.android.material.navigation.NavigationView
+import java.util.Locale
 
 // ─── نماذج البيانات ────────────────────────────────────────────────
 data class VideoItem(
@@ -43,7 +45,6 @@ data class FolderItem(
 
 class VideoLibraryActivity : AppCompatActivity() {
 
-    // ─── Views ────────────────────────────────────────────────────
     private lateinit var drawerLayout: DrawerLayout
     private lateinit var navigationView: NavigationView
     private lateinit var recyclerView: RecyclerView
@@ -57,7 +58,6 @@ class VideoLibraryActivity : AppCompatActivity() {
 
     private lateinit var prefs: SharedPreferences
 
-    // ─── الحالة ───────────────────────────────────────────────────
     private val allVideos   = mutableListOf<VideoItem>()
     private val folderList  = mutableListOf<FolderItem>()
     private var showingFolders = true
@@ -69,10 +69,20 @@ class VideoLibraryActivity : AppCompatActivity() {
         const val REQUEST_PERMISSION = 2001
     }
 
-    // ─── onCreate ─────────────────────────────────────────────────
+    // ─── تطبيق اللغة قبل إنشاء الواجهة ──────────────────────────
+    override fun attachBaseContext(newBase: android.content.Context) {
+        val prefs = newBase.getSharedPreferences("lrec_prefs", MODE_PRIVATE)
+        val lang  = prefs.getString("language", "ar") ?: "ar"
+        val locale = Locale(lang)
+        Locale.setDefault(locale)
+        val config = Configuration(newBase.resources.configuration)
+        config.setLocale(locale)
+        super.attachBaseContext(newBase.createConfigurationContext(config))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        prefs = getSharedPreferences("lrec_prefs", MODE_PRIVATE)
+        prefs       = getSharedPreferences("lrec_prefs", MODE_PRIVATE)
         showHidden  = prefs.getBoolean("show_hidden", false)
         currentLang = prefs.getString("language", "ar") ?: "ar"
 
@@ -97,7 +107,6 @@ class VideoLibraryActivity : AppCompatActivity() {
         )
     }
 
-    // ─── ربط العناصر ─────────────────────────────────────────────
     private fun initViews() {
         drawerLayout   = findViewById(R.id.libDrawerLayout)
         navigationView = findViewById(R.id.libNavigationView)
@@ -116,52 +125,78 @@ class VideoLibraryActivity : AppCompatActivity() {
             it.animate().rotationBy(360f).setDuration(500).start()
             checkPermissionAndLoad()
         }
-
-        btnMenuTop.setOnClickListener {
-            drawerLayout.openDrawer(GravityCompat.START)
-        }
-
-        btnBack.setOnClickListener {
-            handleBackNavigation()
-        }
+        btnMenuTop.setOnClickListener { drawerLayout.openDrawer(GravityCompat.START) }
+        btnBack.setOnClickListener    { handleBackNavigation() }
     }
 
-    // ─── القائمة الجانبية للمكتبة ─────────────────────────────────
+    // ─── القائمة الجانبية الوظيفية ────────────────────────────────
     private fun setupDrawer() {
+        navigationView.menu.findItem(R.id.lib_nav_hidden)?.isChecked = showHidden
+
         navigationView.setNavigationItemSelectedListener { item ->
-            drawerLayout.closeDrawer(GravityCompat.START)
             when (item.itemId) {
-                R.id.lib_nav_settings -> {
-                    openSettingsScreen()
+
+                R.id.lib_nav_theme -> {
+                    val isDark = prefs.getBoolean("dark_mode", true)
+                    prefs.edit().putBoolean("dark_mode", !isDark).apply()
+                    AppCompatDelegate.setDefaultNightMode(
+                        if (!isDark) AppCompatDelegate.MODE_NIGHT_YES
+                        else         AppCompatDelegate.MODE_NIGHT_NO
+                    )
+                    drawerLayout.closeDrawer(GravityCompat.START)
                     true
                 }
-                R.id.lib_nav_refresh -> {
+
+                R.id.lib_nav_language -> {
+                    val newLang = if (currentLang == "ar") "en" else "ar"
+                    prefs.edit().putString("language", newLang).apply()
+                    drawerLayout.closeDrawer(GravityCompat.START)
+                    val intent = Intent(this, VideoLibraryActivity::class.java)
+                    intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
+                    startActivity(intent)
+                    finish()
+                    true
+                }
+
+                R.id.lib_nav_hidden -> {
+                    showHidden = !showHidden
+                    prefs.edit().putBoolean("show_hidden", showHidden).apply()
+                    item.isChecked = showHidden
+                    Toast.makeText(this,
+                        if (showHidden) "سيتم عرض الملفات المخفية" else "لن تُعرض الملفات المخفية",
+                        Toast.LENGTH_SHORT).show()
+                    drawerLayout.closeDrawer(GravityCompat.START)
                     checkPermissionAndLoad()
                     true
                 }
+
+                R.id.lib_nav_refresh -> {
+                    drawerLayout.closeDrawer(GravityCompat.START)
+                    checkPermissionAndLoad()
+                    true
+                }
+
+                R.id.lib_nav_settings -> {
+                    drawerLayout.closeDrawer(GravityCompat.START)
+                    startActivity(Intent(this, SettingsActivity::class.java))
+                    true
+                }
+
                 else -> false
             }
         }
     }
 
-    // ─── شاشة الإعدادات ──────────────────────────────────────────
-    private fun openSettingsScreen() {
-        val intent = Intent(this, SettingsActivity::class.java)
-        startActivity(intent)
-    }
-
-    // ─── الأذونات ────────────────────────────────────────────────
     private fun checkPermissionAndLoad() {
         val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
             Manifest.permission.READ_MEDIA_VIDEO
         else
             Manifest.permission.READ_EXTERNAL_STORAGE
 
-        if (ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED) {
+        if (ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED)
             loadVideos()
-        } else {
+        else
             ActivityCompat.requestPermissions(this, arrayOf(permission), REQUEST_PERMISSION)
-        }
     }
 
     override fun onRequestPermissionsResult(
@@ -169,35 +204,26 @@ class VideoLibraryActivity : AppCompatActivity() {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQUEST_PERMISSION &&
-            grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED)
             loadVideos()
-        } else {
+        else
             showEmpty(getString(R.string.permission_required))
-        }
     }
 
-    // ─── تحميل الفيديوهات وتجميعها في مجلدات ─────────────────────
     private fun loadVideos() {
-        progressBar.visibility = View.VISIBLE
-        tvEmpty.visibility = View.GONE
+        progressBar.visibility  = View.VISIBLE
+        tvEmpty.visibility      = View.GONE
         recyclerView.visibility = View.GONE
 
         Thread {
-            val videos = queryVideos()
+            val videos  = queryVideos()
             val folders = groupByFolder(videos)
-
             runOnUiThread {
                 progressBar.visibility = View.GONE
-                allVideos.clear()
-                allVideos.addAll(videos)
-                folderList.clear()
-                folderList.addAll(folders)
-
-                if (folderList.isEmpty()) {
-                    showEmpty(getString(R.string.no_videos))
-                } else {
-                    showFolders()
-                }
+                allVideos.clear();  allVideos.addAll(videos)
+                folderList.clear(); folderList.addAll(folders)
+                if (folderList.isEmpty()) showEmpty(getString(R.string.no_videos))
+                else showFolders()
             }
         }.start()
     }
@@ -213,14 +239,9 @@ class VideoLibraryActivity : AppCompatActivity() {
             MediaStore.Video.Media.BUCKET_DISPLAY_NAME
         )
 
-        // تحديد شرط إظهار الملفات المخفية
-        val selection = if (!showHidden)
-            "${MediaStore.Video.Media.DATA} NOT LIKE '%/.%'"
-        else null
-
         val cursor: Cursor? = contentResolver.query(
             MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
-            projection, selection, null,
+            projection, null, null,
             "${MediaStore.Video.Media.DATE_ADDED} DESC"
         )
 
@@ -242,73 +263,69 @@ class VideoLibraryActivity : AppCompatActivity() {
                 val uri      = Uri.withAppendedPath(
                     MediaStore.Video.Media.EXTERNAL_CONTENT_URI, id.toString()
                 )
+
+                // فلترة الملفات المخفية (اسم يبدأ أو ينتهي بنقطة)
+                if (isHiddenPath(data) && !showHidden) continue
+
                 list.add(VideoItem(id, title, duration, size, uri, bucket, data))
             }
         }
         return list
     }
 
+    // يكشف الملفات المخفية بالتحقق من كل جزء في المسار
+    private fun isHiddenPath(filePath: String): Boolean {
+        if (filePath.isBlank()) return false
+        return filePath.split("/").any { segment ->
+            segment.isNotBlank() && (segment.startsWith(".") || segment.endsWith("."))
+        }
+    }
+
     private fun groupByFolder(videos: List<VideoItem>): List<FolderItem> {
         val map = linkedMapOf<String, MutableList<VideoItem>>()
-        videos.forEach { v ->
-            map.getOrPut(v.folderName) { mutableListOf() }.add(v)
-        }
+        videos.forEach { v -> map.getOrPut(v.folderName) { mutableListOf() }.add(v) }
         return map.map { (name, vids) ->
             FolderItem(name, vids.first().folderPath, vids.size, vids)
         }.sortedByDescending { it.videoCount }
     }
 
-    // ─── عرض المجلدات ────────────────────────────────────────────
     private fun showFolders() {
-        showingFolders = true
-        currentFolder = null
+        showingFolders     = true
+        currentFolder      = null
         tvScreenTitle.text = getString(R.string.app_name)
         btnBack.visibility = View.GONE
-        tvVideoCount.text = "${folderList.size} ${getString(R.string.folders)}"
-
+        tvVideoCount.text  = "${folderList.size} ${getString(R.string.folders)}"
         recyclerView.visibility = View.VISIBLE
-        recyclerView.adapter = FolderAdapter(folderList) { folder ->
-            showFolderContents(folder)
-        }
+        recyclerView.adapter    = FolderAdapter(folderList) { showFolderContents(it) }
     }
 
-    // ─── عرض محتوى المجلد ────────────────────────────────────────
     private fun showFolderContents(folder: FolderItem) {
-        showingFolders = false
-        currentFolder = folder
+        showingFolders     = false
+        currentFolder      = folder
         tvScreenTitle.text = folder.name
         btnBack.visibility = View.VISIBLE
-        tvVideoCount.text = "${folder.videoCount} ${getString(R.string.videos)}"
-
-        recyclerView.adapter = VideoListAdapter(folder.videos) { video ->
-            openVideo(video)
-        }
+        tvVideoCount.text  = "${folder.videoCount} ${getString(R.string.videos)}"
+        recyclerView.adapter = VideoListAdapter(folder.videos) { openVideo(it) }
     }
 
     private fun showEmpty(msg: String) {
         recyclerView.visibility = View.GONE
-        tvEmpty.text = msg
-        tvEmpty.visibility = View.VISIBLE
+        tvEmpty.text            = msg
+        tvEmpty.visibility      = View.VISIBLE
     }
 
-    // ─── فتح المشغل ──────────────────────────────────────────────
     private fun openVideo(video: VideoItem) {
         val intent = Intent(this, MainActivity::class.java).apply {
             action = Intent.ACTION_VIEW
-            data = video.uri
+            data   = video.uri
             putExtra("VIDEO_TITLE", video.title)
         }
         startActivity(intent)
         overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
     }
 
-    // ─── الرجوع ──────────────────────────────────────────────────
     private fun handleBackNavigation() {
-        if (!showingFolders) {
-            showFolders()
-        } else {
-            finish()
-        }
+        if (!showingFolders) showFolders() else finish()
     }
 
     @Suppress("DEPRECATION")
@@ -323,9 +340,11 @@ class VideoLibraryActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        // إعادة تطبيق الثيم بعد العودة من الإعدادات
-        applyTheme()
-        showHidden = prefs.getBoolean("show_hidden", false)
+        val prevHidden = showHidden
+        showHidden  = prefs.getBoolean("show_hidden", false)
+        currentLang = prefs.getString("language", "ar") ?: "ar"
+        if (prevHidden != showHidden) checkPermissionAndLoad()
+        navigationView.menu.findItem(R.id.lib_nav_hidden)?.isChecked = showHidden
     }
 }
 
