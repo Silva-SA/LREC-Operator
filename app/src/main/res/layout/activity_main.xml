@@ -159,7 +159,7 @@
                 android:padding="10dp"
                 android:contentDescription="تدوير"/>
 
-            <!-- زر القائمة -->
+            <!-- زر القائمة الجانبية -->
             <ImageButton
                 android:id="@+id/btnPlayerMenu"
                 android:layout_width="48dp"
@@ -168,7 +168,7 @@
                 android:background="@drawable/btn_icon_ripple"
                 android:tint="#FFFFFF"
                 android:padding="12dp"
-                android:contentDescription="القائمة"
+                android:contentDescription="القائمة"/>
 
         </LinearLayout>
 
@@ -233,7 +233,10 @@
                     android:text="00:00"
                     android:textColor="#CCFFFFFF"
                     android:textSize="12sp"/>
-                <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1"/>
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="1dp"
+                    android:layout_weight="1"/>
                 <TextView
                     android:id="@+id/tvDuration"
                     android:layout_width="wrap_content"
@@ -322,7 +325,7 @@
 
     </FrameLayout>
 
-    <!-- القائمة الجانبية -->
+    <!-- القائمة الجانبية للمشغل -->
     <com.google.android.material.navigation.NavigationView
         android:id="@+id/navigationView"
         android:layout_width="260dp"
