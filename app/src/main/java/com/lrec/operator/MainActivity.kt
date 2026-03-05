@@ -1,8 +1,10 @@
 package com.lrec.operator
 
 import android.Manifest
-import android.app.Activity
+import android.content.ContentValues
 import android.content.Intent
+import android.content.SharedPreferences
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.net.Uri
@@ -15,12 +17,10 @@ import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
-import android.widget.ImageButton
-import android.widget.LinearLayout
-import android.widget.SeekBar
-import android.widget.TextView
-import android.widget.Toast
+import android.widget.*
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.GravityCompat
@@ -31,19 +31,21 @@ import androidx.media3.common.Player
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import com.google.android.material.navigation.NavigationView
 
 class MainActivity : AppCompatActivity() {
 
-    // ─── المشغل والواجهة ───────────────────────────────────────────
+    // ─── Views ────────────────────────────────────────────────────
     private lateinit var player: ExoPlayer
     private lateinit var playerView: PlayerView
     private lateinit var drawerLayout: DrawerLayout
+    private lateinit var navigationView: NavigationView
 
     private lateinit var btnPlayPause: ImageButton
     private lateinit var btnForward: ImageButton
     private lateinit var btnRewind: ImageButton
-    private lateinit var btnMenu: ImageButton
-    private lateinit var btnOpenFile: ImageButton
+    private lateinit var btnBack: ImageButton
+    private lateinit var btnRotate: ImageButton
 
     private lateinit var seekBar: SeekBar
     private lateinit var progressFill: View
@@ -54,7 +56,6 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var playerControls: LinearLayout
     private lateinit var topBar: LinearLayout
-    private lateinit var emptyState: LinearLayout
 
     private lateinit var volumeOverlay: LinearLayout
     private lateinit var volumeBar: View
@@ -65,53 +66,59 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvBrightnessPercent: TextView
 
     private lateinit var gestureDetector: GestureDetector
+    private lateinit var prefs: SharedPreferences
 
-    // ─── الحالة ────────────────────────────────────────────────────
+    // ─── الحالة ───────────────────────────────────────────────────
     private var controlsVisible = true
     private var isDraggingSeekBar = false
-    private var currentVideoTitle = "LREC Player"
-    private val hideControlsDelay = 3500L
+    private val hideControlsDelay = 120_000L   // دقيقتان
     private val handler = Handler(Looper.getMainLooper())
     private val hideControlsRunnable = Runnable { hideControls() }
     private var overlayHideRunnable: Runnable? = null
+    private var currentPlaybackSpeed = 1.0f
+    private var isLandscape = true
 
-    companion object {
-        private const val REQUEST_PICK_VIDEO = 1001
-        private const val REQUEST_PERMISSION = 1002
-    }
-
-    // ─── onCreate ──────────────────────────────────────────────────
+    // ─── onCreate ─────────────────────────────────────────────────
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        prefs = getSharedPreferences("lrec_prefs", MODE_PRIVATE)
+
+        // تطبيق الثيم المحفوظ
+        val isDark = prefs.getBoolean("dark_mode", true)
+        AppCompatDelegate.setDefaultNightMode(
+            if (isDark) AppCompatDelegate.MODE_NIGHT_YES else AppCompatDelegate.MODE_NIGHT_NO
+        )
 
         @Suppress("DEPRECATION")
         window.decorView.systemUiVisibility = (
             View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
-            View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+            View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+            View.SYSTEM_UI_FLAG_FULLSCREEN or
+            View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
         )
 
         setContentView(R.layout.activity_main)
-
         initializeViews()
         initializePlayer()
+        setupDrawerMenu()
         setupControls()
         setupSeekBar()
         setupGestures()
         startProgressUpdater()
-
-        // التحقق إذا فُتح التطبيق من ملف فيديو
         handleIncomingIntent(intent)
     }
 
-    // ─── ربط العناصر ──────────────────────────────────────────────
+    // ─── ربط العناصر ─────────────────────────────────────────────
     private fun initializeViews() {
         drawerLayout        = findViewById(R.id.drawerLayout)
+        navigationView      = findViewById(R.id.navigationView)
         playerView          = findViewById(R.id.playerView)
         btnPlayPause        = findViewById(R.id.btnPlayPause)
         btnForward          = findViewById(R.id.btnForward)
         btnRewind           = findViewById(R.id.btnRewind)
-        btnMenu             = findViewById(R.id.btnMenu)
-        btnOpenFile         = findViewById(R.id.btnOpenFile)
+        btnBack             = findViewById(R.id.btnBack)
+        btnRotate           = findViewById(R.id.btnRotate)
         seekBar             = findViewById(R.id.seekBar)
         progressFill        = findViewById(R.id.progressFill)
         progressThumb       = findViewById(R.id.progressThumb)
@@ -120,7 +127,6 @@ class MainActivity : AppCompatActivity() {
         tvTitle             = findViewById(R.id.tvTitle)
         playerControls      = findViewById(R.id.playerControls)
         topBar              = findViewById(R.id.topBar)
-        emptyState          = findViewById(R.id.emptyState)
         volumeOverlay       = findViewById(R.id.volumeOverlay)
         volumeBar           = findViewById(R.id.volumeBar)
         tvVolumePercent     = findViewById(R.id.tvVolumePercent)
@@ -129,36 +135,28 @@ class MainActivity : AppCompatActivity() {
         tvBrightnessPercent = findViewById(R.id.tvBrightnessPercent)
     }
 
-    // ─── تهيئة المشغل ─────────────────────────────────────────────
+    // ─── تهيئة المشغل ────────────────────────────────────────────
     private fun initializePlayer() {
         player = ExoPlayer.Builder(this).build()
         playerView.player = player
         playerView.useController = false
 
         player.addListener(object : Player.Listener {
-
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 updatePlayPauseIcon(isPlaying)
             }
-
-            // ─── معالجة الأخطاء ───────────────────────────────────
             override fun onPlayerError(error: PlaybackException) {
-                val message = when (error.errorCode) {
-                    PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ->
-                        "تعذّر الاتصال بالشبكة. تحقق من الإنترنت."
-                    PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND ->
-                        "الملف غير موجود أو تم نقله."
-                    PlaybackException.ERROR_CODE_DECODER_INIT_FAILED ->
-                        "تنسيق الفيديو غير مدعوم."
-                    PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT ->
-                        "انتهت مهلة الاتصال. حاول مجدداً."
+                val msg = when (error.errorCode) {
+                    PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND    -> "الملف غير موجود."
+                    PlaybackException.ERROR_CODE_DECODER_INIT_FAILED  -> "تنسيق الفيديو غير مدعوم."
+                    PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED -> "فشل الاتصال بالشبكة."
                     else -> "حدث خطأ أثناء التشغيل."
                 }
-                showError(message)
+                Toast.makeText(this@MainActivity, msg, Toast.LENGTH_LONG).show()
+                updatePlayPauseIcon(false)
             }
-
-            override fun onPlaybackStateChanged(playbackState: Int) {
-                if (playbackState == Player.STATE_ENDED) {
+            override fun onPlaybackStateChanged(state: Int) {
+                if (state == Player.STATE_ENDED) {
                     updatePlayPauseIcon(false)
                     showControls()
                 }
@@ -166,7 +164,103 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
-    // ─── أزرار التحكم ─────────────────────────────────────────────
+    // ─── القائمة الجانبية ─────────────────────────────────────────
+    private fun setupDrawerMenu() {
+        navigationView.setNavigationItemSelectedListener { item ->
+            drawerLayout.closeDrawer(GravityCompat.START)
+            when (item.itemId) {
+
+                // سرعة التشغيل
+                R.id.nav_speed -> {
+                    showSpeedDialog()
+                    true
+                }
+
+                // تدوير الشاشة
+                R.id.nav_rotate -> {
+                    toggleRotation()
+                    true
+                }
+
+                // مظهر التطبيق
+                R.id.nav_theme -> {
+                    toggleTheme()
+                    true
+                }
+
+                // الإعدادات
+                R.id.nav_settings -> {
+                    showSettingsDialog()
+                    true
+                }
+
+                // تحديث المحتوى - العودة للمكتبة
+                R.id.nav_refresh -> {
+                    finish()
+                    true
+                }
+
+                else -> false
+            }
+        }
+    }
+
+    // ─── حوار سرعة التشغيل ───────────────────────────────────────
+    private fun showSpeedDialog() {
+        val speeds = arrayOf("0.25×", "0.5×", "0.75×", "1.0× (عادي)", "1.25×", "1.5×", "1.75×", "2.0×")
+        val values = floatArrayOf(0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f)
+        val current = values.indexOfFirst { it == currentPlaybackSpeed }.takeIf { it >= 0 } ?: 3
+
+        AlertDialog.Builder(this, R.style.DialogTheme)
+            .setTitle("سرعة التشغيل")
+            .setSingleChoiceItems(speeds, current) { dialog, which ->
+                currentPlaybackSpeed = values[which]
+                player.playbackParameters = PlaybackParameters(currentPlaybackSpeed)
+                dialog.dismiss()
+                Toast.makeText(this, "السرعة: ${speeds[which]}", Toast.LENGTH_SHORT).show()
+            }
+            .show()
+    }
+
+    // ─── تدوير الشاشة ────────────────────────────────────────────
+    private fun toggleRotation() {
+        isLandscape = !isLandscape
+        requestedOrientation = if (isLandscape)
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        else
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+        Toast.makeText(this,
+            if (isLandscape) "وضع أفقي" else "وضع عمودي",
+            Toast.LENGTH_SHORT).show()
+    }
+
+    // ─── تبديل الثيم ─────────────────────────────────────────────
+    private fun toggleTheme() {
+        val isDark = prefs.getBoolean("dark_mode", true)
+        prefs.edit().putBoolean("dark_mode", !isDark).apply()
+        AppCompatDelegate.setDefaultNightMode(
+            if (!isDark) AppCompatDelegate.MODE_NIGHT_YES else AppCompatDelegate.MODE_NIGHT_NO
+        )
+        Toast.makeText(this,
+            if (!isDark) "تم التبديل للوضع الداكن" else "تم التبديل للوضع الفاتح",
+            Toast.LENGTH_SHORT).show()
+    }
+
+    // ─── حوار الإعدادات ──────────────────────────────────────────
+    private fun showSettingsDialog() {
+        val options = arrayOf(
+            "مدة الإخفاء التلقائي: دقيقتان ✓",
+            "الصوت والسطوع بالسحب ✓",
+            "ترميز الفيديو: تلقائي ✓"
+        )
+        AlertDialog.Builder(this, R.style.DialogTheme)
+            .setTitle("الإعدادات")
+            .setItems(options, null)
+            .setPositiveButton("حسناً", null)
+            .show()
+    }
+
+    // ─── أزرار التحكم ────────────────────────────────────────────
     private fun setupControls() {
 
         btnPlayPause.setOnClickListener {
@@ -187,14 +281,16 @@ class MainActivity : AppCompatActivity() {
             resetHideTimer()
         }
 
-        btnMenu.setOnClickListener {
-            drawerLayout.openDrawer(GravityCompat.START)
-            resetHideTimer()
+        // زر الرجوع للمكتبة
+        btnBack.setOnClickListener {
+            finish()
         }
 
-        // زر اختيار ملف فيديو
-        btnOpenFile.setOnClickListener {
-            checkPermissionAndOpenPicker()
+        // زر تدوير الشاشة السريع
+        btnRotate.setOnClickListener {
+            animateButtonClick(it)
+            toggleRotation()
+            resetHideTimer()
         }
 
         playerView.setOnClickListener {
@@ -202,136 +298,63 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ─── اختيار الفيديو من الجهاز ─────────────────────────────────
-    private fun checkPermissionAndOpenPicker() {
-        val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            Manifest.permission.READ_MEDIA_VIDEO
+    // ─── تحميل الفيديو ───────────────────────────────────────────
+    private fun handleIncomingIntent(intent: Intent?) {
+        val uri = intent?.data
+        val title = intent?.getStringExtra("VIDEO_TITLE")
+        if (uri != null) {
+            tvTitle.text = title ?: getVideoTitle(uri)
+            val mediaItem = MediaItem.fromUri(uri)
+            player.setMediaItem(mediaItem)
+            player.prepare()
+            player.playWhenReady = true
+            showControls()
+            scheduleHideControls()
         } else {
-            Manifest.permission.READ_EXTERNAL_STORAGE
+            finish() // لا يوجد فيديو، ارجع للمكتبة
         }
-
-        if (ContextCompat.checkSelfPermission(this, permission)
-            == PackageManager.PERMISSION_GRANTED) {
-            openVideoPicker()
-        } else {
-            ActivityCompat.requestPermissions(this, arrayOf(permission), REQUEST_PERMISSION)
-        }
-    }
-
-    private fun openVideoPicker() {
-        val intent = Intent(Intent.ACTION_PICK, MediaStore.Video.Media.EXTERNAL_CONTENT_URI).apply {
-            type = "video/*"
-        }
-        startActivityForResult(intent, REQUEST_PICK_VIDEO)
-    }
-
-    override fun onRequestPermissionsResult(
-        requestCode: Int, permissions: Array<out String>, grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == REQUEST_PERMISSION) {
-            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                openVideoPicker()
-            } else {
-                Toast.makeText(this, "يجب منح إذن الوصول للملفات لاختيار فيديو.", Toast.LENGTH_LONG).show()
-            }
-        }
-    }
-
-    @Suppress("DEPRECATION")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQUEST_PICK_VIDEO && resultCode == Activity.RESULT_OK) {
-            val uri = data?.data ?: return
-            loadVideo(uri)
-        }
-    }
-
-    // ─── تحميل الفيديو ────────────────────────────────────────────
-    private fun loadVideo(uri: Uri) {
-        // استخراج اسم الفيديو
-        currentVideoTitle = getVideoTitle(uri)
-        tvTitle.text = currentVideoTitle
-
-        // إخفاء الشاشة الفارغة
-        emptyState.visibility = View.GONE
-        playerControls.visibility = View.VISIBLE
-        topBar.visibility = View.VISIBLE
-        playerControls.alpha = 1f
-        topBar.alpha = 1f
-        controlsVisible = true
-
-        // تشغيل الفيديو
-        val mediaItem = MediaItem.fromUri(uri)
-        player.setMediaItem(mediaItem)
-        player.prepare()
-        player.playWhenReady = true
-
-        scheduleHideControls()
     }
 
     private fun getVideoTitle(uri: Uri): String {
         return try {
-            val cursor = contentResolver.query(uri, arrayOf(MediaStore.Video.Media.TITLE), null, null, null)
-            cursor?.use {
-                if (it.moveToFirst()) it.getString(0) else null
-            } ?: uri.lastPathSegment ?: "فيديو"
-        } catch (e: Exception) {
-            uri.lastPathSegment ?: "فيديو"
-        }
+            val cursor = contentResolver.query(
+                uri, arrayOf(MediaStore.Video.Media.TITLE), null, null, null)
+            cursor?.use { if (it.moveToFirst()) it.getString(0) else null }
+                ?: uri.lastPathSegment ?: "فيديو"
+        } catch (e: Exception) { uri.lastPathSegment ?: "فيديو" }
     }
 
-    // ─── فتح التطبيق من ملف خارجي ─────────────────────────────────
-    private fun handleIncomingIntent(intent: Intent?) {
-        if (intent?.action == Intent.ACTION_VIEW) {
-            val uri = intent.data ?: return
-            loadVideo(uri)
-        } else {
-            // إظهار شاشة اختيار الفيديو
-            emptyState.visibility = View.VISIBLE
-            playerControls.alpha = 0f
-            playerControls.visibility = View.INVISIBLE
-            topBar.alpha = 0f
-            topBar.visibility = View.INVISIBLE
-            controlsVisible = false
-        }
-    }
-
-    // ─── شريط التقدم ──────────────────────────────────────────────
+    // ─── شريط التقدم ─────────────────────────────────────────────
     private fun setupSeekBar() {
         seekBar.max = 1000
         seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
-                if (fromUser) {
-                    val duration = player.duration
-                    if (duration > 0) {
-                        player.seekTo(duration * progress / 1000L)
-                        updateProgressBarUI(progress, 1000)
-                    }
+            override fun onProgressChanged(sb: SeekBar, progress: Int, fromUser: Boolean) {
+                if (fromUser && player.duration > 0) {
+                    player.seekTo(player.duration * progress / 1000L)
+                    updateProgressBarUI(progress, 1000)
                 }
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar) {
+            override fun onStartTrackingTouch(sb: SeekBar) {
                 isDraggingSeekBar = true
                 handler.removeCallbacks(hideControlsRunnable)
             }
-            override fun onStopTrackingTouch(seekBar: SeekBar) {
+            override fun onStopTrackingTouch(sb: SeekBar) {
                 isDraggingSeekBar = false
                 resetHideTimer()
             }
         })
     }
 
-    // ─── تحديث التقدم ─────────────────────────────────────────────
     private val progressUpdater = object : Runnable {
         override fun run() {
             if (!isDraggingSeekBar && player.duration > 0) {
-                val position = player.currentPosition
-                val duration = player.duration
-                val progress = (position * 1000L / duration).toInt()
-                seekBar.progress = progress
-                updateProgressBarUI(progress, 1000)
-                tvCurrentTime.text = formatTime(position)
-                tvDuration.text = formatTime(duration)
+                val pos = player.currentPosition
+                val dur = player.duration
+                val prog = (pos * 1000L / dur).toInt()
+                seekBar.progress = prog
+                updateProgressBarUI(prog, 1000)
+                tvCurrentTime.text = formatTime(pos)
+                tvDuration.text = formatTime(dur)
             }
             handler.postDelayed(this, 500)
         }
@@ -341,17 +364,17 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateProgressBarUI(progress: Int, max: Int) {
         progressFill.post {
-            val parentWidth = (progressFill.parent as? View)?.width ?: return@post
-            val fillWidth = (parentWidth * progress / max).coerceAtLeast(0)
-            progressFill.layoutParams.width = fillWidth
+            val pw = (progressFill.parent as? View)?.width ?: return@post
+            val fw = (pw * progress / max).coerceAtLeast(0)
+            progressFill.layoutParams.width = fw
             progressFill.requestLayout()
             val tp = progressThumb.layoutParams as? ViewGroup.MarginLayoutParams
-            tp?.marginStart = (fillWidth - 7.dpToPx()).coerceAtLeast(0)
+            tp?.marginStart = (fw - 7.dpToPx()).coerceAtLeast(0)
             progressThumb.layoutParams = tp
         }
     }
 
-    // ─── الإيماءات ────────────────────────────────────────────────
+    // ─── الإيماءات ───────────────────────────────────────────────
     private fun setupGestures() {
         gestureDetector = GestureDetector(this,
             object : GestureDetector.SimpleOnGestureListener() {
@@ -359,21 +382,26 @@ class MainActivity : AppCompatActivity() {
                     e1: MotionEvent?, e2: MotionEvent,
                     distanceX: Float, distanceY: Float
                 ): Boolean {
-                    // فقط عند وجود فيديو
                     if (player.duration <= 0) return false
                     val x = e1?.x ?: 0f
-                    val percent = -distanceY / 800f
-                    if (x < resources.displayMetrics.widthPixels / 2) {
-                        adjustBrightness(percent)
+                    // distanceY موجب = السحب للأعلى في الواجهة
+                    // السحب للأعلى يرفع، السحب للأسفل يخفض
+                    val delta = distanceY / 600f  // موجب = تخفيض، سالب = رفع
+                    if (x < resources.displayMetrics.widthPixels / 2f) {
+                        adjustBrightness(-delta)  // يسار = سطوع
                     } else {
-                        adjustVolume(percent)
+                        adjustVolume(-delta)       // يمين = صوت
                     }
                     return true
                 }
                 override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
-                    if (player.duration > 0) {
-                        if (controlsVisible) hideControls() else showControls()
-                    }
+                    if (controlsVisible) hideControls() else showControls()
+                    return true
+                }
+                // ضغط مزدوج = تشغيل/إيقاف
+                override fun onDoubleTap(e: MotionEvent): Boolean {
+                    animateButtonClick(btnPlayPause)
+                    if (player.isPlaying) player.pause() else player.play()
                     return true
                 }
             })
@@ -384,40 +412,43 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ─── الصوت مع Overlay ─────────────────────────────────────────
-    private fun adjustVolume(fraction: Float) {
-        val am = getSystemService(AUDIO_SERVICE) as AudioManager
+    // ─── الصوت ───────────────────────────────────────────────────
+    private fun adjustVolume(delta: Float) {
+        val am  = getSystemService(AUDIO_SERVICE) as AudioManager
         val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-        val newVol = (am.getStreamVolume(AudioManager.STREAM_MUSIC) +
-                (fraction * max).toInt()).coerceIn(0, max)
-        am.setStreamVolume(AudioManager.STREAM_MUSIC, newVol, 0)
-        showVolumeOverlay(if (max > 0) newVol * 100 / max else 0)
+        val cur = am.getStreamVolume(AudioManager.STREAM_MUSIC)
+        // delta موجب = رفع، سالب = خفض
+        val change = (delta * max).toInt()
+        val newVol = (cur + change).coerceIn(0, max)
+        am.setStreamVolume(AudioManager.STREAM_MUSIC, newVol, AudioManager.FLAG_REMOVE_SOUND_AND_VIBRATE)
+        val pct = if (max > 0) newVol * 100 / max else 0
+        showVolumeOverlay(pct)
         resetHideTimer()
     }
 
-    private fun showVolumeOverlay(percent: Int) {
-        tvVolumePercent.text = "$percent%"
-        val h = (120.dpToPx() * percent / 100).coerceIn(0, 120.dpToPx())
-        volumeBar.layoutParams.height = h
+    private fun showVolumeOverlay(pct: Int) {
+        tvVolumePercent.text = "$pct%"
+        val barH = 110.dpToPx()
+        volumeBar.layoutParams.height = (barH * pct / 100).coerceIn(0, barH)
         volumeBar.requestLayout()
         showOverlay(volumeOverlay)
     }
 
-    // ─── السطوع مع Overlay ────────────────────────────────────────
-    private fun adjustBrightness(fraction: Float) {
+    // ─── السطوع ──────────────────────────────────────────────────
+    private fun adjustBrightness(delta: Float) {
         val lp = window.attributes
         var b = if (lp.screenBrightness < 0f) 0.5f else lp.screenBrightness
-        b = (b + fraction).coerceIn(0.01f, 1f)
+        b = (b + delta).coerceIn(0.01f, 1f)
         lp.screenBrightness = b
         window.attributes = lp
         showBrightnessOverlay((b * 100).toInt())
         resetHideTimer()
     }
 
-    private fun showBrightnessOverlay(percent: Int) {
-        tvBrightnessPercent.text = "$percent%"
-        val h = (120.dpToPx() * percent / 100).coerceIn(0, 120.dpToPx())
-        brightnessBar.layoutParams.height = h
+    private fun showBrightnessOverlay(pct: Int) {
+        tvBrightnessPercent.text = "$pct%"
+        val barH = 110.dpToPx()
+        brightnessBar.layoutParams.height = (barH * pct / 100).coerceIn(0, barH)
         brightnessBar.requestLayout()
         showOverlay(brightnessOverlay)
     }
@@ -433,10 +464,10 @@ class MainActivity : AppCompatActivity() {
             overlay.animate().alpha(0f).setDuration(300)
                 .withEndAction { overlay.visibility = View.INVISIBLE }.start()
         }
-        handler.postDelayed(overlayHideRunnable!!, 1500)
+        handler.postDelayed(overlayHideRunnable!!, 1800)
     }
 
-    // ─── إظهار / إخفاء أدوات التحكم ──────────────────────────────
+    // ─── إظهار/إخفاء التحكم ──────────────────────────────────────
     private fun showControls() {
         if (controlsVisible) return
         controlsVisible = true
@@ -465,44 +496,33 @@ class MainActivity : AppCompatActivity() {
         if (!controlsVisible) showControls() else scheduleHideControls()
     }
 
-    // ─── مساعدات ──────────────────────────────────────────────────
-    private fun updatePlayPauseIcon(isPlaying: Boolean) {
+    // ─── مساعدات ─────────────────────────────────────────────────
+    private fun updatePlayPauseIcon(playing: Boolean) {
         btnPlayPause.setImageResource(
-            if (isPlaying) R.drawable.ic_pause else R.drawable.ic_play
+            if (playing) R.drawable.ic_pause else R.drawable.ic_play
         )
     }
 
-    private fun animateButtonClick(view: View) {
-        view.animate().scaleX(0.82f).scaleY(0.82f).setDuration(75).withEndAction {
-            view.animate().scaleX(1f).scaleY(1f).setDuration(110).start()
+    private fun animateButtonClick(v: View) {
+        v.animate().scaleX(0.82f).scaleY(0.82f).setDuration(75).withEndAction {
+            v.animate().scaleX(1f).scaleY(1f).setDuration(110).start()
         }.start()
     }
 
-    private fun showError(message: String) {
-        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
-        updatePlayPauseIcon(false)
-    }
-
     private fun formatTime(ms: Long): String {
-        val s = ms / 1000
-        val h = s / 3600
-        val m = (s % 3600) / 60
-        val sec = s % 60
+        val s = ms / 1000; val h = s / 3600; val m = (s % 3600) / 60; val sec = s % 60
         return if (h > 0) String.format("%d:%02d:%02d", h, m, sec)
         else String.format("%02d:%02d", m, sec)
     }
 
     private fun Int.dpToPx() = (this * resources.displayMetrics.density).toInt()
 
-    // ─── دورة الحياة ──────────────────────────────────────────────
-    override fun onPause() { super.onPause(); player.pause() }
-
-    override fun onResume() {
+    // ─── دورة الحياة ─────────────────────────────────────────────
+    override fun onPause()   { super.onPause(); player.pause() }
+    override fun onResume()  {
         super.onResume()
-        if (player.playbackState != Player.STATE_ENDED && player.duration > 0)
-            player.play()
+        if (player.playbackState != Player.STATE_ENDED && player.duration > 0) player.play()
     }
-
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
         player.release()
