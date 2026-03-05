@@ -1,33 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
-
     <group android:checkableBehavior="none">
-
-        <item
-            android:id="@+id/nav_speed"
-            android:icon="@drawable/ic_speed"
-            android:title="سرعة التشغيل"/>
-
-        <item
-            android:id="@+id/nav_rotate"
-            android:icon="@drawable/ic_rotate"
-            android:title="تدوير الشاشة"/>
-
-        <item
-            android:id="@+id/nav_theme"
-            android:icon="@drawable/ic_theme"
-            android:title="مظهر التطبيق"/>
-
-        <item
-            android:id="@+id/nav_settings"
-            android:icon="@drawable/ic_settings"
-            android:title="الإعدادات"/>
-
-        <item
-            android:id="@+id/nav_refresh"
-            android:icon="@drawable/ic_refresh"
-            android:title="العودة للمكتبة"/>
-
+        <item android:id="@+id/nav_speed"    android:icon="@drawable/ic_speed"       android:title="سرعة التشغيل"/>
+        <item android:id="@+id/nav_rotate"   android:icon="@drawable/ic_rotate"      android:title="تدوير الشاشة"/>
+        <item android:id="@+id/nav_back_lib" android:icon="@drawable/ic_arrow_back"  android:title="العودة للمكتبة"/>
     </group>
-
 </menu>
