@@ -20,77 +20,7 @@
             app:use_artwork="false"
             android:background="#000000"/>
 
-        <!-- شاشة الترحيب عند عدم وجود فيديو -->
-        <LinearLayout
-            android:id="@+id/emptyState"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:orientation="vertical"
-            android:gravity="center"
-            android:visibility="gone"
-            android:background="#000000">
-
-            <ImageView
-                android:layout_width="96dp"
-                android:layout_height="96dp"
-                android:src="@mipmap/ic_launcher"
-                android:alpha="0.7"/>
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="LREC Player"
-                android:textColor="#FFFFFFFF"
-                android:textSize="26sp"
-                android:fontFamily="sans-serif-medium"
-                android:layout_marginTop="20dp"/>
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="اضغط الزر أدناه لاختيار فيديو"
-                android:textColor="#99FFFFFF"
-                android:textSize="14sp"
-                android:layout_marginTop="8dp"/>
-
-            <!-- زر اختيار فيديو كبير -->
-            <LinearLayout
-                android:id="@+id/btnOpenFileBig"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center"
-                android:background="@drawable/bg_open_btn"
-                android:padding="14dp"
-                android:layout_marginTop="32dp"
-                android:clickable="false">
-
-                <ImageView
-                    android:layout_width="22dp"
-                    android:layout_height="22dp"
-                    android:src="@drawable/ic_folder"
-                    android:tint="#FFFFFF"/>
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="  اختر فيديو"
-                    android:textColor="#FFFFFF"
-                    android:textSize="15sp"
-                    android:fontFamily="sans-serif-medium"/>
-
-            </LinearLayout>
-
-        </LinearLayout>
-
-        <!-- Overlay تعتيم -->
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:background="@drawable/gradient_overlay"
-            android:alpha="0"/>
-
-        <!-- Overlay مستوى الصوت -->
+        <!-- Overlay مستوى الصوت (يمين) -->
         <LinearLayout
             android:id="@+id/volumeOverlay"
             android:layout_width="52dp"
@@ -114,19 +44,16 @@
                 android:layout_height="110dp"
                 android:layout_marginTop="8dp"
                 android:layout_marginBottom="8dp">
-
                 <View
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
                     android:background="@drawable/bg_progress_track"/>
-
                 <View
                     android:id="@+id/volumeBar"
                     android:layout_width="match_parent"
                     android:layout_height="55dp"
                     android:layout_gravity="bottom"
                     android:background="@drawable/bg_progress_fill"/>
-
             </FrameLayout>
 
             <TextView
@@ -136,10 +63,9 @@
                 android:text="50%"
                 android:textColor="#FFFFFF"
                 android:textSize="10sp"/>
-
         </LinearLayout>
 
-        <!-- Overlay مستوى السطوع -->
+        <!-- Overlay مستوى السطوع (يسار) -->
         <LinearLayout
             android:id="@+id/brightnessOverlay"
             android:layout_width="52dp"
@@ -163,19 +89,16 @@
                 android:layout_height="110dp"
                 android:layout_marginTop="8dp"
                 android:layout_marginBottom="8dp">
-
                 <View
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
                     android:background="@drawable/bg_progress_track"/>
-
                 <View
                     android:id="@+id/brightnessBar"
                     android:layout_width="match_parent"
                     android:layout_height="55dp"
                     android:layout_gravity="bottom"
                     android:background="@drawable/bg_progress_fill_brightness"/>
-
             </FrameLayout>
 
             <TextView
@@ -185,10 +108,9 @@
                 android:text="50%"
                 android:textColor="#FFFFFF"
                 android:textSize="10sp"/>
-
         </LinearLayout>
 
-        <!-- شريط أعلى الشاشة -->
+        <!-- شريط العنوان العلوي -->
         <LinearLayout
             android:id="@+id/topBar"
             android:layout_width="match_parent"
@@ -199,18 +121,19 @@
             android:paddingStart="4dp"
             android:paddingEnd="8dp"
             android:background="@drawable/gradient_top"
-            android:visibility="invisible"
-            android:alpha="0">
+            android:visibility="visible"
+            android:alpha="1">
 
+            <!-- زر الرجوع للمكتبة -->
             <ImageButton
-                android:id="@+id/btnMenu"
+                android:id="@+id/btnBack"
                 android:layout_width="48dp"
                 android:layout_height="48dp"
-                android:src="@drawable/ic_menu"
+                android:src="@drawable/ic_arrow_back"
                 android:background="@drawable/btn_icon_ripple"
                 android:tint="#FFFFFF"
                 android:padding="12dp"
-                android:contentDescription="Menu"/>
+                android:contentDescription="رجوع"/>
 
             <TextView
                 android:id="@+id/tvTitle"
@@ -219,26 +142,38 @@
                 android:layout_weight="1"
                 android:text="LREC Player"
                 android:textColor="#FFFFFF"
-                android:textSize="15sp"
+                android:textSize="14sp"
                 android:fontFamily="sans-serif-medium"
-                android:paddingStart="6dp"
+                android:paddingStart="4dp"
                 android:ellipsize="end"
                 android:maxLines="1"/>
 
-            <!-- زر فتح ملف في شريط العنوان -->
+            <!-- زر تدوير سريع -->
             <ImageButton
-                android:id="@+id/btnOpenFile"
+                android:id="@+id/btnRotate"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:src="@drawable/ic_rotate"
+                android:background="@drawable/btn_icon_ripple"
+                android:tint="#FFFFFF"
+                android:padding="10dp"
+                android:contentDescription="تدوير"/>
+
+            <!-- زر القائمة -->
+            <ImageButton
+                android:id="@+id/btnMenu"
                 android:layout_width="48dp"
                 android:layout_height="48dp"
-                android:src="@drawable/ic_folder"
+                android:src="@drawable/ic_menu"
                 android:background="@drawable/btn_icon_ripple"
                 android:tint="#FFFFFF"
                 android:padding="12dp"
-                android:contentDescription="Open Video"/>
+                android:contentDescription="القائمة"
+                android:onClick="openMenu"/>
 
         </LinearLayout>
 
-        <!-- لوحة تحكم سفلية -->
+        <!-- لوحة التحكم السفلية -->
         <LinearLayout
             android:id="@+id/playerControls"
             android:layout_width="match_parent"
@@ -250,8 +185,8 @@
             android:paddingTop="8dp"
             android:paddingStart="16dp"
             android:paddingEnd="16dp"
-            android:visibility="invisible"
-            android:alpha="0">
+            android:visibility="visible"
+            android:alpha="1">
 
             <!-- شريط التقدم -->
             <FrameLayout
@@ -263,21 +198,18 @@
                     android:layout_height="3dp"
                     android:layout_gravity="center_vertical"
                     android:background="@drawable/bg_seekbar_track"/>
-
                 <View
                     android:id="@+id/progressFill"
                     android:layout_width="0dp"
                     android:layout_height="3dp"
                     android:layout_gravity="center_vertical|start"
                     android:background="@drawable/bg_seekbar_fill"/>
-
                 <View
                     android:id="@+id/progressThumb"
                     android:layout_width="14dp"
                     android:layout_height="14dp"
                     android:layout_gravity="center_vertical|start"
                     android:background="@drawable/bg_seekbar_thumb"/>
-
                 <SeekBar
                     android:id="@+id/seekBar"
                     android:layout_width="match_parent"
@@ -287,16 +219,14 @@
                     android:progressDrawable="@android:color/transparent"
                     android:thumb="@android:color/transparent"
                     android:max="1000"/>
-
             </FrameLayout>
 
-            <!-- عرض الوقت -->
+            <!-- الوقت -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
                 android:paddingTop="2dp">
-
                 <TextView
                     android:id="@+id/tvCurrentTime"
                     android:layout_width="wrap_content"
@@ -304,12 +234,7 @@
                     android:text="00:00"
                     android:textColor="#CCFFFFFF"
                     android:textSize="12sp"/>
-
-                <View
-                    android:layout_width="0dp"
-                    android:layout_height="1dp"
-                    android:layout_weight="1"/>
-
+                <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1"/>
                 <TextView
                     android:id="@+id/tvDuration"
                     android:layout_width="wrap_content"
@@ -317,7 +242,6 @@
                     android:text="00:00"
                     android:textColor="#CCFFFFFF"
                     android:textSize="12sp"/>
-
             </LinearLayout>
 
             <!-- أزرار التحكم -->
@@ -332,7 +256,6 @@
                     android:layout_width="64dp"
                     android:layout_height="64dp"
                     android:layout_marginEnd="8dp">
-
                     <ImageButton
                         android:id="@+id/btnRewind"
                         android:layout_width="match_parent"
@@ -341,8 +264,7 @@
                         android:background="@drawable/btn_control_ripple"
                         android:tint="#FFFFFF"
                         android:padding="16dp"
-                        android:contentDescription="Rewind"/>
-
+                        android:contentDescription="10 ثوان للخلف"/>
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
@@ -351,7 +273,6 @@
                         android:text="10"
                         android:textColor="#CCFFFFFF"
                         android:textSize="9sp"/>
-
                 </FrameLayout>
 
                 <FrameLayout
@@ -359,12 +280,10 @@
                     android:layout_height="72dp"
                     android:layout_marginStart="8dp"
                     android:layout_marginEnd="8dp">
-
                     <View
                         android:layout_width="72dp"
                         android:layout_height="72dp"
                         android:background="@drawable/bg_play_button"/>
-
                     <ImageButton
                         android:id="@+id/btnPlayPause"
                         android:layout_width="match_parent"
@@ -373,15 +292,13 @@
                         android:background="@drawable/btn_play_ripple"
                         android:tint="#FFFFFF"
                         android:padding="18dp"
-                        android:contentDescription="Play Pause"/>
-
+                        android:contentDescription="تشغيل إيقاف"/>
                 </FrameLayout>
 
                 <FrameLayout
                     android:layout_width="64dp"
                     android:layout_height="64dp"
                     android:layout_marginStart="8dp">
-
                     <ImageButton
                         android:id="@+id/btnForward"
                         android:layout_width="match_parent"
@@ -390,8 +307,7 @@
                         android:background="@drawable/btn_control_ripple"
                         android:tint="#FFFFFF"
                         android:padding="16dp"
-                        android:contentDescription="Forward"/>
-
+                        android:contentDescription="10 ثوان للأمام"/>
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
@@ -400,21 +316,22 @@
                         android:text="10"
                         android:textColor="#CCFFFFFF"
                         android:textSize="9sp"/>
-
                 </FrameLayout>
 
             </LinearLayout>
-
         </LinearLayout>
 
     </FrameLayout>
 
-    <!-- Navigation Drawer -->
+    <!-- القائمة الجانبية -->
     <com.google.android.material.navigation.NavigationView
         android:id="@+id/navigationView"
-        android:layout_width="wrap_content"
+        android:layout_width="260dp"
         android:layout_height="match_parent"
         android:layout_gravity="start"
-        app:menu="@menu/drawer_menu"/>
+        android:background="@color/drawer_bg"
+        app:menu="@menu/player_menu"
+        app:itemTextColor="@color/drawer_text"
+        app:itemIconTint="@color/accent_blue"/>
 
 </androidx.drawerlayout.widget.DrawerLayout>
