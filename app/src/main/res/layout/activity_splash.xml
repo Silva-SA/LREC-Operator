@@ -1,58 +1,108 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout
+<ScrollView
     xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:gravity="center"
-    android:padding="32dp"
+    android:fillViewport="true"
     android:background="@color/splash_bg">
 
-    <!-- أيقونة التطبيق -->
-    <ImageView
-        android:layout_width="96dp"
-        android:layout_height="96dp"
-        android:src="@mipmap/ic_launcher_round"
-        android:layout_marginBottom="24dp"/>
-
-    <!-- اسم المطور -->
-    <TextView
-        android:id="@+id/tvBrand"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Silva.SA"
-        android:textColor="@color/splash_brand"
-        android:textSize="32sp"
-        android:fontFamily="sans-serif-medium"
-        android:letterSpacing="0.1"
-        android:layout_marginBottom="32dp"/>
-
-    <!-- رسالة الترحيب -->
-    <TextView
-        android:id="@+id/tvMessage"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:visibility="invisible"
-        android:text="لأن وقتكم مهم بالنسبة لكم\nولأن أبرز خطواتنا تنجز بالتراكم\nنقولها لكم حملها وشغلها\n\n          ^_^\n\nهذا المنتج مصمم للاستخدام الشخصي\nويمنع استخدامه للأغراض التجارية أو النشر\nدون موافقة مسبقة\n\nاحترم جهدنا"
-        android:textColor="@color/splash_text"
-        android:textSize="15sp"
-        android:lineSpacingMultiplier="1.6"
-        android:gravity="center"
-        android:background="@drawable/bg_splash_card"
-        android:padding="20dp"
-        android:layout_marginBottom="36dp"/>
+        android:orientation="vertical"
+        android:gravity="center_horizontal"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
+        android:paddingTop="40dp"
+        android:paddingBottom="40dp"
+        android:minHeight="100dp">
 
-    <!-- زر الدخول -->
-    <Button
-        android:id="@+id/btnEnter"
-        android:layout_width="200dp"
-        android:layout_height="52dp"
-        android:visibility="invisible"
-        android:text="ابدأ الآن"
-        android:textSize="16sp"
-        android:textColor="#FFFFFF"
-        android:fontFamily="sans-serif-medium"
-        android:background="@drawable/bg_btn_enter"
-        android:stateListAnimator="@null"/>
+        <!-- أيقونة التطبيق -->
+        <ImageView
+            android:id="@+id/ivLogo"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:layout_weight="0"
+            android:src="@mipmap/ic_launcher_round"
+            android:adjustViewBounds="true"
+            android:scaleType="fitCenter"
+            android:layout_gravity="center_horizontal"/>
 
-</LinearLayout>
+        <!-- اسم المطور -->
+        <TextView
+            android:id="@+id/tvBrand"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Silva.SA"
+            android:textColor="@color/splash_brand"
+            android:textSize="32sp"
+            android:fontFamily="sans-serif-medium"
+            android:letterSpacing="0.1"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="20dp"
+            android:layout_marginBottom="24dp"/>
+
+        <!-- بطاقة الرسالة -->
+        <LinearLayout
+            android:id="@+id/cardMessage"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:background="@drawable/bg_splash_card"
+            android:padding="20dp"
+            android:visibility="invisible"
+            android:layout_marginBottom="28dp">
+
+            <!-- رسالة الترحيب -->
+            <TextView
+                android:id="@+id/tvWelcome"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="لأن وقتكم مهم بالنسبة لكم\nولأن أبرز خطواتنا تنجز بالتراكم\nنقولها لكم حملها وشغلها"
+                android:textColor="@color/splash_text"
+                android:textSize="15sp"
+                android:lineSpacingMultiplier="1.6"
+                android:gravity="center"/>
+
+            <!-- الإيموجي المتوسط -->
+            <TextView
+                android:id="@+id/tvEmoji"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="😊 💙 😊"
+                android:textSize="26sp"
+                android:layout_gravity="center"
+                android:gravity="center"
+                android:layout_marginTop="12dp"
+                android:layout_marginBottom="12dp"/>
+
+            <!-- رسالة الحقوق -->
+            <TextView
+                android:id="@+id/tvRights"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="هذا المنتج مصمم للاستخدام الشخصي\nويمنع استخدامه للأغراض التجارية أو النشر\nدون موافقة مسبقة\n\nاحترم جهدنا"
+                android:textColor="@color/splash_text"
+                android:textSize="15sp"
+                android:lineSpacingMultiplier="1.6"
+                android:gravity="center"/>
+
+        </LinearLayout>
+
+        <!-- زر الدخول -->
+        <Button
+            android:id="@+id/btnEnter"
+            android:layout_width="200dp"
+            android:layout_height="52dp"
+            android:visibility="invisible"
+            android:text="ابدأ الآن"
+            android:textSize="16sp"
+            android:textColor="#FFFFFF"
+            android:fontFamily="sans-serif-medium"
+            android:background="@drawable/bg_btn_enter"
+            android:layout_gravity="center_horizontal"
+            android:stateListAnimator="@null"/>
+
+    </LinearLayout>
+</ScrollView>
