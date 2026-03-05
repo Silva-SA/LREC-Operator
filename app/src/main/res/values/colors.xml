@@ -1,10 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- ألوان المشغل -->
     <color name="primary_color">#1A1A2E</color>
     <color name="primary_variant_color">#16213E</color>
     <color name="secondary_color">#0F3460</color>
     <color name="background_color">#000000</color>
     <color name="player_control_bg">#00000000</color>
     <color name="md_theme_light_onPrimary">#FFFFFF</color>
-    <color name="accent_color">#FFFFFF</color>
+    <color name="accent_blue">#4A9EFF</color>
+
+    <!-- ألوان المكتبة - وضع داكن -->
+    <color name="lib_bg">#0D0D0D</color>
+    <color name="lib_toolbar">#1A1A1A</color>
+    <color name="lib_card">#1E1E1E</color>
+    <color name="lib_text_primary">#FFFFFF</color>
+    <color name="lib_text_secondary">#888888</color>
+
+    <!-- القائمة الجانبية -->
+    <color name="drawer_bg">#111111</color>
+    <color name="drawer_text">#EEEEEE</color>
 </resources>
