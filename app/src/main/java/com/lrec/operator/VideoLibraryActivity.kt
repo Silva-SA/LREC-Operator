@@ -13,6 +13,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.*
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.app.ActivityCompat
@@ -129,62 +130,91 @@ class VideoLibraryActivity : AppCompatActivity() {
         btnBack.setOnClickListener    { handleBackNavigation() }
     }
 
-    // ─── القائمة الجانبية الوظيفية ────────────────────────────────
+    // ─── القائمة الجانبية: فقط "الإعدادات" و"تحديث" ─────────────
     private fun setupDrawer() {
-        navigationView.menu.findItem(R.id.lib_nav_hidden)?.isChecked = showHidden
-
         navigationView.setNavigationItemSelectedListener { item ->
             when (item.itemId) {
 
-                R.id.lib_nav_theme -> {
-                    val isDark = prefs.getBoolean("dark_mode", true)
-                    prefs.edit().putBoolean("dark_mode", !isDark).apply()
-                    AppCompatDelegate.setDefaultNightMode(
-                        if (!isDark) AppCompatDelegate.MODE_NIGHT_YES
-                        else         AppCompatDelegate.MODE_NIGHT_NO
-                    )
-                    drawerLayout.closeDrawer(GravityCompat.START)
-                    true
-                }
-
-                R.id.lib_nav_language -> {
-                    val newLang = if (currentLang == "ar") "en" else "ar"
-                    prefs.edit().putString("language", newLang).apply()
-                    drawerLayout.closeDrawer(GravityCompat.START)
-                    val intent = Intent(this, VideoLibraryActivity::class.java)
-                    intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
-                    startActivity(intent)
-                    finish()
-                    true
-                }
-
-                R.id.lib_nav_hidden -> {
-                    showHidden = !showHidden
-                    prefs.edit().putBoolean("show_hidden", showHidden).apply()
-                    item.isChecked = showHidden
-                    Toast.makeText(this,
-                        if (showHidden) "سيتم عرض الملفات المخفية" else "لن تُعرض الملفات المخفية",
-                        Toast.LENGTH_SHORT).show()
-                    drawerLayout.closeDrawer(GravityCompat.START)
-                    checkPermissionAndLoad()
-                    true
-                }
-
-                R.id.lib_nav_refresh -> {
-                    drawerLayout.closeDrawer(GravityCompat.START)
-                    checkPermissionAndLoad()
-                    true
-                }
-
+                // ✅ زر الإعدادات → يفتح حوار يحوي 3 خيارات
                 R.id.lib_nav_settings -> {
                     drawerLayout.closeDrawer(GravityCompat.START)
-                    startActivity(Intent(this, SettingsActivity::class.java))
+                    showSettingsDialog()
+                    true
+                }
+
+                // ✅ زر التحديث
+                R.id.lib_nav_refresh -> {
+                    drawerLayout.closeDrawer(GravityCompat.START)
+                    btnRefreshTop.animate().rotationBy(360f).setDuration(500).start()
+                    checkPermissionAndLoad()
                     true
                 }
 
                 else -> false
             }
         }
+    }
+
+    // ─── حوار الإعدادات (تبديل المظهر / تغيير اللغة / الملفات المخفية) ──
+    private fun showSettingsDialog() {
+        val isDark = prefs.getBoolean("dark_mode", true)
+
+        // ✅ استخدام @string للحصول على النص باللغة الصحيحة
+        val options = arrayOf(
+            getString(R.string.toggle_theme),
+            getString(R.string.change_language),
+            getString(R.string.show_hidden_files)
+        )
+
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.settings_title))
+            .setItems(options) { _, which ->
+                when (which) {
+
+                    // ── تبديل المظهر ─────────────────────────────
+                    0 -> {
+                        val newDark = !isDark
+                        prefs.edit().putBoolean("dark_mode", newDark).apply()
+                        AppCompatDelegate.setDefaultNightMode(
+                            if (newDark) AppCompatDelegate.MODE_NIGHT_YES
+                            else         AppCompatDelegate.MODE_NIGHT_NO
+                        )
+                        Toast.makeText(
+                            this,
+                            getString(if (newDark) R.string.theme_dark else R.string.theme_light),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        // ✅ إعادة إنشاء الواجهة لتطبيق المظهر الجديد فوراً
+                        recreate()
+                    }
+
+                    // ── تغيير اللغة ──────────────────────────────
+                    1 -> {
+                        val newLang = if (currentLang == "ar") "en" else "ar"
+                        prefs.edit().putString("language", newLang).apply()
+                        Toast.makeText(this, getString(R.string.lang_changed), Toast.LENGTH_SHORT).show()
+                        // إعادة تشغيل الـ Activity لتطبيق اللغة
+                        val intent = Intent(this, VideoLibraryActivity::class.java)
+                        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
+                        startActivity(intent)
+                        finish()
+                    }
+
+                    // ── إظهار / إخفاء الملفات المخفية ────────────
+                    2 -> {
+                        showHidden = !showHidden
+                        prefs.edit().putBoolean("show_hidden", showHidden).apply()
+                        Toast.makeText(
+                            this,
+                            getString(if (showHidden) R.string.hidden_shown else R.string.hidden_hidden),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        checkPermissionAndLoad()
+                    }
+                }
+            }
+            .setNegativeButton(getString(R.string.close), null)
+            .show()
     }
 
     private fun checkPermissionAndLoad() {
@@ -255,16 +285,16 @@ class VideoLibraryActivity : AppCompatActivity() {
 
             while (it.moveToNext()) {
                 val id       = it.getLong(idCol)
-                val title    = it.getString(titleCol) ?: "فيديو"
+                val title    = it.getString(titleCol) ?: getString(R.string.videos)
                 val duration = it.getLong(durCol)
                 val size     = it.getLong(sizeCol)
                 val data     = it.getString(dataCol) ?: ""
-                val bucket   = it.getString(bucketCol) ?: "أخرى"
+                val bucket   = it.getString(bucketCol) ?: "?"
                 val uri      = Uri.withAppendedPath(
                     MediaStore.Video.Media.EXTERNAL_CONTENT_URI, id.toString()
                 )
 
-                // فلترة الملفات المخفية (اسم يبدأ أو ينتهي بنقطة)
+                // ✅ فلترة الملفات المخفية: تحقق من أي جزء في المسار يبدأ بنقطة
                 if (isHiddenPath(data) && !showHidden) continue
 
                 list.add(VideoItem(id, title, duration, size, uri, bucket, data))
@@ -277,7 +307,7 @@ class VideoLibraryActivity : AppCompatActivity() {
     private fun isHiddenPath(filePath: String): Boolean {
         if (filePath.isBlank()) return false
         return filePath.split("/").any { segment ->
-            segment.isNotBlank() && (segment.startsWith(".") || segment.endsWith("."))
+            segment.isNotBlank() && segment.startsWith(".")
         }
     }
 
@@ -344,7 +374,6 @@ class VideoLibraryActivity : AppCompatActivity() {
         showHidden  = prefs.getBoolean("show_hidden", false)
         currentLang = prefs.getString("language", "ar") ?: "ar"
         if (prevHidden != showHidden) checkPermissionAndLoad()
-        navigationView.menu.findItem(R.id.lib_nav_hidden)?.isChecked = showHidden
     }
 }
 
@@ -367,7 +396,8 @@ class FolderAdapter(
     override fun onBindViewHolder(holder: VH, position: Int) {
         val f = items[position]
         holder.tvName.text  = f.name
-        holder.tvCount.text = "${f.videoCount} فيديو"
+        // ✅ استخدام getString من context بدلاً من النص المشفّر
+        holder.tvCount.text = "${f.videoCount} ${holder.tvCount.context.getString(R.string.videos)}"
         holder.root.setOnClickListener {
             it.animate().scaleX(0.97f).scaleY(0.97f).setDuration(80).withEndAction {
                 it.animate().scaleX(1f).scaleY(1f).setDuration(100).start()
