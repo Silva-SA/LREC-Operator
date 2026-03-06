@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">LREC Player</string>
+
+    <!-- Toolbar -->
+    <string name="folders">folder</string>
+    <string name="videos">video</string>
+
+    <!-- Messages -->
+    <string name="no_videos">No videos found on device</string>
+    <string name="permission_required">Storage permission required\nPress refresh to try again</string>
+
+    <!-- Library Drawer -->
+    <string name="settings">Settings</string>
+    <string name="refresh">Refresh</string>
+
+    <!-- Settings Dialog -->
+    <string name="settings_title">Settings</string>
+    <string name="toggle_theme">Toggle Theme</string>
+    <string name="change_language">Change Language</string>
+    <string name="show_hidden_files">Show Hidden Files</string>
+    <string name="close">Close</string>
+
+    <!-- Toast Messages -->
+    <string name="hidden_shown">Hidden files will be shown</string>
+    <string name="hidden_hidden">Hidden files will not be shown</string>
+    <string name="theme_dark">Switched to Dark Mode</string>
+    <string name="theme_light">Switched to Light Mode</string>
+    <string name="lang_changed">Language changed</string>
+
+    <!-- Player Menu -->
+    <string name="playback_speed">Playback Speed</string>
+    <string name="volume_boost">Volume Boost</string>
+    <string name="audio_clarity">Audio Clarity ✨</string>
+    <string name="rotate_screen">Rotate Screen</string>
+    <string name="back_to_library">Back to Library</string>
+</resources>
