@@ -12,6 +12,11 @@
         android:icon="@drawable/ic_volume"/>
 
     <item
+        android:id="@+id/nav_clarity"
+        android:title="توضيح الصوت ✨"
+        android:icon="@drawable/ic_volume"/>
+
+    <item
         android:id="@+id/nav_rotate"
         android:title="تدوير الشاشة"
         android:icon="@drawable/ic_rotate"/>
