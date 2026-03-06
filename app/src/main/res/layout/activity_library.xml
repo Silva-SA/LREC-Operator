@@ -13,7 +13,7 @@
         android:orientation="vertical"
         android:background="@color/lib_bg">
 
-        <!-- شريط العنوان -->
+        <!-- ─── شريط العنوان ───────────────────────────────────── -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="60dp"
@@ -36,26 +36,39 @@
                 android:visibility="gone"
                 android:contentDescription="رجوع"/>
 
-            <TextView
-                android:id="@+id/tvScreenTitle"
+            <!--
+                ✅ الإصلاح: وضع العنوان والعداد في عمود عمودي داخل
+                   LinearLayout بوزن=1 بدلاً من وضعهما بالتوازي
+                   → يمنع تداخلهما بغض النظر عن لغة النص أو طوله
+            -->
+            <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="LREC Player"
-                android:textColor="@color/lib_text_primary"
-                android:textSize="18sp"
-                android:fontFamily="sans-serif-medium"
+                android:orientation="vertical"
                 android:paddingStart="12dp"
-                android:ellipsize="end"
-                android:maxLines="1"/>
+                android:gravity="center_vertical">
 
-            <TextView
-                android:id="@+id/tvVideoCount"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:textColor="@color/lib_text_secondary"
-                android:textSize="12sp"
-                android:paddingEnd="8dp"/>
+                <TextView
+                    android:id="@+id/tvScreenTitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="LREC Player"
+                    android:textColor="@color/lib_text_primary"
+                    android:textSize="16sp"
+                    android:fontFamily="sans-serif-medium"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:singleLine="true"/>
+
+                <TextView
+                    android:id="@+id/tvVideoCount"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/lib_text_secondary"
+                    android:textSize="11sp"/>
+
+            </LinearLayout>
 
             <!-- زر تحديث -->
             <ImageButton
