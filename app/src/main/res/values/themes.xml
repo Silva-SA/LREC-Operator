@@ -1,18 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+
     <style name="Theme.LRECOperator" parent="Theme.MaterialComponents.DayNight.NoActionBar">
         <item name="colorPrimary">@color/primary_color</item>
         <item name="colorPrimaryVariant">@color/primary_variant_color</item>
         <item name="colorSecondary">@color/secondary_color</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/black</item>
-        <item name="android:windowBackground">@android:color/black</item>
+        <!-- ✅ خلفية النافذة تتبع المظهر تلقائياً عبر lib_bg -->
+        <item name="android:windowBackground">@color/lib_bg</item>
     </style>
 
+    <!--
+        ✅ حوار الإعدادات يستخدم card_bg لتبديل خلفيته مع المظهر
+           في الوضع الداكن = #1E1E1E | في الوضع الفاتح = #FFFFFF
+    -->
     <style name="DialogTheme" parent="Theme.MaterialComponents.DayNight.Dialog.Alert">
         <item name="colorPrimary">@color/accent_blue</item>
-        <item name="android:background">#1E1E1E</item>
-        <item name="android:textColor">#FFFFFF</item>
-        <item name="android:textColorPrimary">#FFFFFF</item>
+        <item name="android:background">@color/card_bg</item>
+        <item name="android:textColor">@color/lib_text_primary</item>
+        <item name="android:textColorPrimary">@color/lib_text_primary</item>
     </style>
+
 </resources>
