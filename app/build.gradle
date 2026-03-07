@@ -11,14 +11,19 @@ android {
         applicationId "com.lrec.operator"
         minSdk 21
         targetSdk 34
-        versionCode 3
-        versionName "3.0"
+        versionCode 4
+        versionName "4.0"
     }
 
     buildTypes {
         release {
-            minifyEnabled false
+            // ✅ تفعيل minify في الإصدار النهائي يُقلل حجم APK
+            minifyEnabled true
+            shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            minifyEnabled false
         }
     }
 
@@ -30,6 +35,13 @@ android {
     kotlinOptions { jvmTarget = '17' }
 
     buildFeatures { viewBinding true }
+
+    // ✅ منع تكرار ملفات META-INF عند البناء
+    packagingOptions {
+        resources {
+            excludes += '/META-INF/{AL2.0,LGPL2.1}'
+        }
+    }
 }
 
 dependencies {
@@ -40,10 +52,10 @@ dependencies {
     implementation 'androidx.media3:media3-exoplayer:1.2.1'
     implementation 'androidx.media3:media3-ui:1.2.1'
 
-    // ── دعم ملفات .lrec ───────────────────────────────────────────
-    // فك ضغط CAB / zlib الخاص بـ Linktivity
-    implementation 'org.apache.commons:commons-compress:1.26.1'
-    // اختيار الملفات من التخزين
+    // ── دعم فتح ملفات .lrec من مدير الملفات ──────────────────────
     implementation 'androidx.activity:activity-ktx:1.8.2'
     implementation 'androidx.documentfile:documentfile:1.0.1'
+
+    // ملاحظة: commons-compress حُذفت لأن فك ضغط zlib يعتمد الآن
+    // على java.util.zip.Inflater المدمجة في Android — لا حاجة لمكتبة خارجية
 }
