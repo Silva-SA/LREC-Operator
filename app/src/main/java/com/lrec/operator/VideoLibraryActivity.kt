@@ -13,6 +13,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.*
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
@@ -23,6 +24,7 @@ import androidx.drawerlayout.widget.DrawerLayout
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import android.provider.MediaStore
+import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.navigation.NavigationView
 import java.util.Locale
 
@@ -56,6 +58,7 @@ class VideoLibraryActivity : AppCompatActivity() {
     private lateinit var btnRefreshTop: ImageButton
     private lateinit var btnMenuTop: ImageButton
     private lateinit var btnBack: ImageButton
+    private lateinit var fabOpenLrec: FloatingActionButton   // ✅ زر فتح .lrec
 
     private lateinit var prefs: SharedPreferences
 
@@ -68,12 +71,31 @@ class VideoLibraryActivity : AppCompatActivity() {
 
     companion object {
         const val REQUEST_PERMISSION = 2001
-
-        // ✅ الإصلاح الجذري لخطأ "Unresolved reference: IS_HIDDEN":
-        //    نعرّف اسم العمود كنص ثابت بدلاً من MediaStore.MediaColumns.IS_HIDDEN
-        //    لأن المترجم لا يجد هذا الثابت عند بعض إعدادات compileSdk.
-        //    القيمة "is_hidden" هي اسم العمود الفعلي في قاعدة بيانات MediaStore.
         private const val COLUMN_IS_HIDDEN = "is_hidden"
+    }
+
+    // ✅ فاتح ملفات .lrec من مدير الملفات
+    private val lrecFilePicker = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri == null) return@registerForActivityResult
+
+        // احفظ صلاحية القراءة الدائمة لهذا الملف
+        try {
+            contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+        } catch (e: Exception) { /* بعض الأجهزة لا تدعم ذلك */ }
+
+        // افتح مشغل .lrec المخصص
+        val intent = Intent(this, LrecPlayerActivity::class.java).apply {
+            action = Intent.ACTION_VIEW
+            data   = uri
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        startActivity(intent)
+        overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
     }
 
     // ─── تطبيق اللغة قبل إنشاء الواجهة ──────────────────────────
@@ -119,6 +141,7 @@ class VideoLibraryActivity : AppCompatActivity() {
         btnRefreshTop  = findViewById(R.id.btnRefresh)
         btnMenuTop     = findViewById(R.id.btnMenuTop)
         btnBack        = findViewById(R.id.btnBackLib)
+        fabOpenLrec    = findViewById(R.id.fabOpenLrec)   // ✅ ربط زر .lrec
 
         recyclerView.layoutManager = LinearLayoutManager(this)
 
@@ -128,6 +151,15 @@ class VideoLibraryActivity : AppCompatActivity() {
         }
         btnMenuTop.setOnClickListener { drawerLayout.openDrawer(GravityCompat.START) }
         btnBack.setOnClickListener   { handleBackNavigation() }
+
+        // ✅ عند الضغط على زر .lrec — يفتح مستعرض الملفات
+        fabOpenLrec.setOnClickListener {
+            lrecFilePicker.launch(arrayOf(
+                "application/octet-stream",  // النوع الذي يُعطيه مدير الملفات لـ .lrec
+                "application/x-lrec",        // النوع المخصص
+                "*/*"                        // احتياطي لجميع أنواع الملفات
+            ))
+        }
     }
 
     // ─── القائمة الجانبية ────────────────────────────────────────
@@ -154,7 +186,6 @@ class VideoLibraryActivity : AppCompatActivity() {
     private fun showSettingsDialog() {
         val isDark = prefs.getBoolean("dark_mode", true)
 
-        // النص يعكس الحالة الحالية: إظهار أو إخفاء
         val options = arrayOf(
             getString(R.string.toggle_theme),
             getString(R.string.change_language),
@@ -263,17 +294,6 @@ class VideoLibraryActivity : AppCompatActivity() {
             MediaStore.Video.Media.BUCKET_DISPLAY_NAME
         )
 
-        // ✅ Android 10+ (API 29+):
-        //    نستخدم COLUMN_IS_HIDDEN = "is_hidden" (نص ثابت آمن للمترجم)
-        //    بدلاً من MediaStore.MediaColumns.IS_HIDDEN الذي يسبب خطأ الترجمة.
-        //
-        //    showHidden=true  → "$COLUMN_IS_HIDDEN IN (0, 1)" يجلب كل شيء
-        //    showHidden=false → "$COLUMN_IS_HIDDEN = 0"       يجلب غير المخفي فقط
-        //
-        // ✅ Android 9 وما دون:
-        //    لا يوجد عمود is_hidden في MediaStore، نضع selection=null
-        //    ونصفّي يدوياً بعد الجلب عبر isHiddenPath().
-
         val selection: String? = when {
             showHidden && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ->
                 "$COLUMN_IS_HIDDEN IN (0, 1)"
@@ -309,7 +329,6 @@ class VideoLibraryActivity : AppCompatActivity() {
                     MediaStore.Video.Media.EXTERNAL_CONTENT_URI, id.toString()
                 )
 
-                // للإصدارات الأقدم من Android 10: تصفية يدوية بالمسار
                 if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
                     if (isHiddenPath(data) && !showHidden) continue
                 }
@@ -320,7 +339,6 @@ class VideoLibraryActivity : AppCompatActivity() {
         return list
     }
 
-    // يكشف الملفات المخفية للإصدارات الأقدم من Android 10
     private fun isHiddenPath(filePath: String): Boolean {
         if (filePath.isBlank()) return false
         return filePath.split("/").any { segment ->
