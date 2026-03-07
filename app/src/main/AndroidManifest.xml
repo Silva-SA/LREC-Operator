@@ -7,6 +7,9 @@
         android:maxSdkVersion="32"/>
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"/>
 
+    <!-- ✅ مطلوب لفتح ملفات .lrec من مدير الملفات على Android 7+ -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
+
     <application
         android:allowBackup="true"
         android:label="@string/app_name"
@@ -15,7 +18,7 @@
         android:theme="@style/Theme.LRECOperator"
         android:supportsRtl="true">
 
-        <!-- 1. شاشة الترحيب - أولى شاشة تفتح -->
+        <!-- 1. شاشة الترحيب -->
         <activity
             android:name=".SplashActivity"
             android:exported="true"
@@ -39,7 +42,7 @@
             android:exported="false"
             android:screenOrientation="portrait"/>
 
-        <!-- 4. المشغل -->
+        <!-- 4. مشغل الفيديو العادي (MP4 / AVI) -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -51,6 +54,30 @@
                 <category android:name="android.intent.category.DEFAULT"/>
                 <data android:mimeType="video/*"/>
             </intent-filter>
+        </activity>
+
+        <!-- 5. ✅ مشغل ملفات .lrec الجديد -->
+        <activity
+            android:name=".LrecPlayerActivity"
+            android:exported="true"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:windowSoftInputMode="adjustNothing">
+
+            <!--
+                يفتح الملف عند النقر عليه من مدير الملفات
+                النوع application/octet-stream هو ما تُرسله معظم تطبيقات
+                مدير الملفات للملفات ذات الامتداد غير المعروف مثل .lrec
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:mimeType="application/octet-stream"/>
+                <data android:mimeType="application/x-lrec"/>
+                <data android:mimeType="*/*"/>
+            </intent-filter>
+
         </activity>
 
     </application>
