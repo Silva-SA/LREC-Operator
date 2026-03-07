@@ -7,16 +7,17 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Rect
-import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.OpenableColumns
 import android.view.GestureDetector
+import android.view.Gravity
 import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
@@ -25,86 +26,78 @@ import android.view.ViewGroup
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.drawerlayout.widget.DrawerLayout
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import java.io.File
 import java.io.FileOutputStream
 import kotlin.math.abs
 
-/**
- * ══════════════════════════════════════════════════════════════════
- *  LrecPlayerActivity — مشغل ملفات .lrec
- *
- *  يقوم بـ:
- *  1. تحليل الملف باستخدام LrecParser
- *  2. عرض إطارات الشاشة على SurfaceView بـ 5 fps
- *  3. تشغيل الصوت عبر AudioTrack (PCM)
- *  4. عرض رسائل المحادثة مع توقيتها
- *  5. أدوات تحكم: تشغيل/إيقاف، تقديم، تأخير، شريط تقدم
- * ══════════════════════════════════════════════════════════════════
- */
 class LrecPlayerActivity : AppCompatActivity(), SurfaceHolder.Callback {
 
-    // ── العناصر المرئية ───────────────────────────────────────────
-    private lateinit var surfaceView:         SurfaceView
-    private lateinit var loadingLayout:       View
-    private lateinit var tvLoadingMsg:        TextView
-    private lateinit var tvLoadingDetail:     TextView
-    private lateinit var errorLayout:         View
-    private lateinit var tvErrorMsg:          TextView
-    private lateinit var tvErrorDetail:       TextView
-    private lateinit var lrecTopBar:          View
-    private lateinit var lrecPlayerControls:  View
-    private lateinit var btnBack:             ImageButton
-    private lateinit var btnPlayPause:        ImageButton
-    private lateinit var btnForward:          ImageButton
-    private lateinit var btnRewind:           ImageButton
-    private lateinit var btnChat:             ImageButton
-    private lateinit var btnRotate:           ImageButton
-    private lateinit var seekBar:             SeekBar
-    private lateinit var progressFill:        View
-    private lateinit var progressThumb:       View
-    private lateinit var tvCurrentTime:       TextView
-    private lateinit var tvDuration:          TextView
-    private lateinit var tvTitle:             TextView
-    private lateinit var chatOverlay:         View
-    private lateinit var chatRecyclerView:    RecyclerView
-    private lateinit var volumeOverlay:       LinearLayout
-    private lateinit var volumeBar:           View
-    private lateinit var tvVolumePercent:     TextView
-    private lateinit var brightnessOverlay:   LinearLayout
-    private lateinit var brightnessBar:       View
-    private lateinit var tvBrightnessPercent: TextView
+    // ── عناصر الواجهة ─────────────────────────────────────────────
+    private lateinit var lrecDrawerLayout:      DrawerLayout
+    private lateinit var chatDrawerPanel:        View
+    private lateinit var btnCloseChatDrawer:     ImageButton
+    private lateinit var chatRecyclerView:       RecyclerView
+    private lateinit var tvNoChatMsg:            TextView
 
-    // ── المشغل ────────────────────────────────────────────────────
-    private var parser: LrecParser? = null
-    private var screenFrames  = listOf<LrecParser.LrecFrame>()
-    private var chatMessages  = listOf<ChatMessage>()
+    private lateinit var surfaceView:            SurfaceView
+    private lateinit var loadingLayout:          View
+    private lateinit var tvLoadingMsg:           TextView
+    private lateinit var tvLoadingDetail:        TextView
+    private lateinit var errorLayout:            View
+    private lateinit var tvErrorMsg:             TextView
+    private lateinit var tvErrorDetail:          TextView
+    private lateinit var lrecTopBar:             View
+    private lateinit var lrecPlayerControls:     View
+    private lateinit var btnBack:                ImageButton
+    private lateinit var btnPlayPause:           ImageButton
+    private lateinit var btnForward:             ImageButton
+    private lateinit var btnRewind:              ImageButton
+    private lateinit var btnChat:                ImageButton
+    private lateinit var btnRotate:              ImageButton
+    private lateinit var seekBar:                SeekBar
+    private lateinit var progressFill:           View
+    private lateinit var progressThumb:          View
+    private lateinit var tvCurrentTime:          TextView
+    private lateinit var tvDuration:             TextView
+    private lateinit var tvTitle:                TextView
+    private lateinit var volumeOverlay:          LinearLayout
+    private lateinit var volumeBar:              View
+    private lateinit var tvVolumePercent:        TextView
+    private lateinit var brightnessOverlay:      LinearLayout
+    private lateinit var brightnessBar:          View
+    private lateinit var tvBrightnessPercent:    TextView
 
-    // حالة التشغيل
+    // ── حالة المشغل ───────────────────────────────────────────────
+    private var parser:           LrecParser? = null
+    private var screenFrames    = listOf<LrecParser.LrecFrame>()
+    private var chatMessages    = listOf<ChatMessage>()
+
     private var isPlaying         = false
     private var currentFrameIndex = 0
     private var surfaceReady      = false
     private var controlsVisible   = true
-    private var chatVisible       = false
     private var isLandscape       = true
     private var isDraggingSeekBar = false
 
-    // Bitmap الحالي للشاشة (يُحدَّث بالتطبيق التدريجي للإطارات)
     private var screenBitmap: Bitmap? = null
     private val bitmapPaint   = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val destRect      = Rect()
 
-    // AudioTrack للصوت
+    // ── الصوت ─────────────────────────────────────────────────────
     private var audioTrack: AudioTrack? = null
-    private val AUDIO_SAMPLE_RATE = 8000   // 8 kHz — معيار VoIP عام 2007
+    private val AUDIO_SAMPLE_RATE = 8000
     private val AUDIO_CHANNELS    = AudioFormat.CHANNEL_OUT_MONO
     private val AUDIO_ENCODING    = AudioFormat.ENCODING_PCM_16BIT
 
-    // Handlers وتوقيت
-    private val handler          = Handler(Looper.getMainLooper())
-    private val FRAME_INTERVAL   = 200L    // 5 fps = 200ms
-    private val HIDE_DELAY       = 3000L
+    // ── Handlers وتوقيت الإخفاء ───────────────────────────────────
+    private val handler        = Handler(Looper.getMainLooper())
+    private val FRAME_INTERVAL = 200L          // 5 fps = 200ms لكل إطار
+
+    // ✅ التعديل 1: وقت الاختفاء التلقائي = دقيقتان = 120,000ms
+    private val HIDE_DELAY     = 120_000L
 
     private val playbackRunnable = object : Runnable {
         override fun run() {
@@ -120,18 +113,17 @@ class LrecPlayerActivity : AppCompatActivity(), SurfaceHolder.Callback {
         }
     }
 
-    private val hideRunnable = Runnable { hideControls() }
+    private val hideRunnable     = Runnable { hideControls() }
+    private var overlayRunnable: Runnable? = null
 
-    // إيماءات اللمس
+    // ── إيماءات ───────────────────────────────────────────────────
     private var gestureStartX = 0f
     private var gestureStartY = 0f
     private var gestureType   = GestureType.NONE
     private enum class GestureType { NONE, VOLUME, BRIGHTNESS }
 
     private lateinit var audioManager: AudioManager
-    private var overlayRunnable: Runnable? = null
 
-    // ── نموذج رسالة المحادثة ─────────────────────────────────────
     data class ChatMessage(val timeMs: Long, val text: String)
 
     // ══════════════════════════════════════════════════════════════
@@ -140,14 +132,13 @@ class LrecPlayerActivity : AppCompatActivity(), SurfaceHolder.Callback {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // تطبيق الثيم المحفوظ
-        val prefs = getSharedPreferences("lrec_prefs", MODE_PRIVATE)
+        val prefs  = getSharedPreferences("lrec_prefs", MODE_PRIVATE)
         val isDark = prefs.getBoolean("dark_mode", true)
         AppCompatDelegate.setDefaultNightMode(
-            if (isDark) AppCompatDelegate.MODE_NIGHT_YES else AppCompatDelegate.MODE_NIGHT_NO
+            if (isDark) AppCompatDelegate.MODE_NIGHT_YES
+            else        AppCompatDelegate.MODE_NIGHT_NO
         )
 
-        // وضع ملء الشاشة
         @Suppress("DEPRECATION")
         window.decorView.systemUiVisibility = (
             View.SYSTEM_UI_FLAG_FULLSCREEN          or
@@ -164,14 +155,19 @@ class LrecPlayerActivity : AppCompatActivity(), SurfaceHolder.Callback {
         setupControls()
         setupSeekBar()
         setupTouchGestures()
-        setupChatRecycler()
+        setupChatDrawer()
 
-        // بدء تحميل الملف
         handleIncomingIntent(intent)
     }
 
     // ── ربط العناصر ──────────────────────────────────────────────
     private fun bindViews() {
+        lrecDrawerLayout     = findViewById(R.id.lrecDrawerLayout)
+        chatDrawerPanel      = findViewById(R.id.chatDrawerPanel)
+        btnCloseChatDrawer   = findViewById(R.id.btnCloseChatDrawer)
+        chatRecyclerView     = findViewById(R.id.chatRecyclerView)
+        tvNoChatMsg          = findViewById(R.id.tvNoChatMsg)
+
         surfaceView          = findViewById(R.id.lrecSurfaceView)
         loadingLayout        = findViewById(R.id.loadingLayout)
         tvLoadingMsg         = findViewById(R.id.tvLoadingMsg)
@@ -193,8 +189,6 @@ class LrecPlayerActivity : AppCompatActivity(), SurfaceHolder.Callback {
         tvCurrentTime        = findViewById(R.id.lrecTvCurrentTime)
         tvDuration           = findViewById(R.id.lrecTvDuration)
         tvTitle              = findViewById(R.id.lrecTvTitle)
-        chatOverlay          = findViewById(R.id.chatOverlay)
-        chatRecyclerView     = findViewById(R.id.chatRecyclerView)
         volumeOverlay        = findViewById(R.id.lrecVolumeOverlay)
         volumeBar            = findViewById(R.id.lrecVolumeBar)
         tvVolumePercent      = findViewById(R.id.tvLrecVolumePercent)
@@ -205,34 +199,50 @@ class LrecPlayerActivity : AppCompatActivity(), SurfaceHolder.Callback {
         surfaceView.holder.addCallback(this)
     }
 
-    // ── معالجة الـ Intent القادم ──────────────────────────────────
+    // ── إعداد قائمة المحادثة الجانبية ────────────────────────────
+    private fun setupChatDrawer() {
+        chatRecyclerView.layoutManager = LinearLayoutManager(this).also {
+            it.stackFromEnd = true
+        }
+        chatRecyclerView.adapter = ChatAdapter(mutableListOf())
+
+        btnCloseChatDrawer.setOnClickListener {
+            lrecDrawerLayout.closeDrawer(Gravity.END)
+        }
+
+        // ✅ عند فتح/إغلاق قائمة المحادثة يُعاد ضبط مؤقت الاختفاء
+        lrecDrawerLayout.addDrawerListener(object : DrawerLayout.SimpleDrawerListener() {
+            override fun onDrawerOpened(drawerView: View) {
+                // أعد ضبط المؤقت — القائمة مفتوحة والمستخدم نشط
+                resetHideTimer()
+            }
+            override fun onDrawerClosed(drawerView: View) {
+                // أعد ضبط المؤقت من جديد بعد الإغلاق
+                resetHideTimer()
+            }
+        })
+    }
+
+    // ── معالجة الـ Intent ─────────────────────────────────────────
     private fun handleIncomingIntent(intent: Intent?) {
         val uri = intent?.data
-
         if (uri == null) {
             showError("لم يتم تمرير ملف", "تأكد من فتح ملف .lrec صحيح")
             return
         }
-
-        // عرض اسم الملف
         tvTitle.text = getFileName(uri)
-
-        // تحويل URI إلى File مؤقت ثم تحليله
         showLoading("جاري قراءة الملف...")
         Thread { loadLrecFile(uri) }.start()
     }
 
-    // ── تحميل الملف في خيط خلفي ──────────────────────────────────
+    // ── تحميل وتحليل الملف ───────────────────────────────────────
     private fun loadLrecFile(uri: Uri) {
         try {
             runOnUiThread { tvLoadingMsg.text = "جاري نسخ الملف..." }
 
-            // نسخ الملف إلى مساحة مؤقتة (لقراءة RandomAccessFile)
             val tempFile = File(cacheDir, "current_lrec.lrec")
             contentResolver.openInputStream(uri)?.use { input ->
-                FileOutputStream(tempFile).use { output ->
-                    input.copyTo(output)
-                }
+                FileOutputStream(tempFile).use { output -> input.copyTo(output) }
             } ?: run {
                 runOnUiThread { showError("تعذّر فتح الملف", "تأكد من صلاحيات الوصول") }
                 return
@@ -240,8 +250,7 @@ class LrecPlayerActivity : AppCompatActivity(), SurfaceHolder.Callback {
 
             runOnUiThread { tvLoadingMsg.text = "جاري تحليل الإطارات..." }
 
-            // تحليل الملف
-            val p = LrecParser(tempFile)
+            val p       = LrecParser(tempFile)
             val success = p.parse()
 
             if (!success || p.getAllFrames().isEmpty()) {
@@ -255,9 +264,7 @@ class LrecPlayerActivity : AppCompatActivity(), SurfaceHolder.Callback {
                 return
             }
 
-            parser = p
-
-            // فرز الإطارات
+            parser       = p
             screenFrames = p.getScreenFrames()
             chatMessages = p.getChatFrames().mapNotNull { frame ->
                 p.decodeChatFrame(frame)?.let { text ->
@@ -265,7 +272,6 @@ class LrecPlayerActivity : AppCompatActivity(), SurfaceHolder.Callback {
                 }
             }
 
-            // تجهيز الـ Bitmap الفارغ
             val meta = p.metadata
             screenBitmap = Bitmap.createBitmap(
                 meta.screenWidth.coerceAtLeast(1),
@@ -273,19 +279,27 @@ class LrecPlayerActivity : AppCompatActivity(), SurfaceHolder.Callback {
                 Bitmap.Config.ARGB_8888
             ).also { it.eraseColor(Color.BLACK) }
 
-            // تجهيز الصوت
             initAudio()
 
-            val frameCount = screenFrames.size
             val durationStr = formatTime(p.getDurationMs())
 
             runOnUiThread {
-                tvLoadingDetail.text = "$frameCount إطار — $durationStr"
+                tvLoadingDetail.text = "${screenFrames.size} إطار — $durationStr"
                 tvDuration.text      = durationStr
-                (chatRecyclerView.adapter as? ChatAdapter)?.updateMessages(chatMessages)
+
+                val adapter = chatRecyclerView.adapter as? ChatAdapter
+                adapter?.updateMessages(chatMessages)
+
+                if (chatMessages.isEmpty()) {
+                    chatRecyclerView.visibility = View.GONE
+                    tvNoChatMsg.visibility      = View.VISIBLE
+                } else {
+                    chatRecyclerView.visibility = View.VISIBLE
+                    tvNoChatMsg.visibility      = View.GONE
+                }
+
                 hideLoading()
                 showControls()
-                // بدء التشغيل تلقائياً بعد اكتمال الـ Surface
                 if (surfaceReady) startPlayback()
             }
 
@@ -296,34 +310,40 @@ class LrecPlayerActivity : AppCompatActivity(), SurfaceHolder.Callback {
         }
     }
 
-    // ── تهيئة مشغل الصوت PCM ─────────────────────────────────────
+    // ── تهيئة AudioTrack (✅ متوافق مع API 21+) ──────────────────
+    @Suppress("DEPRECATION")
     private fun initAudio() {
         try {
             val bufSize = AudioTrack.getMinBufferSize(
                 AUDIO_SAMPLE_RATE, AUDIO_CHANNELS, AUDIO_ENCODING
             ).coerceAtLeast(4096)
 
-            audioTrack = AudioTrack.Builder()
-                .setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                        .build()
+            audioTrack = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                AudioTrack.Builder()
+                    .setAudioFormat(
+                        AudioFormat.Builder()
+                            .setSampleRate(AUDIO_SAMPLE_RATE)
+                            .setEncoding(AUDIO_ENCODING)
+                            .setChannelMask(AUDIO_CHANNELS)
+                            .build()
+                    )
+                    .setBufferSizeInBytes(bufSize)
+                    .setTransferMode(AudioTrack.MODE_STREAM)
+                    .build()
+            } else {
+                AudioTrack(
+                    AudioManager.STREAM_MUSIC,
+                    AUDIO_SAMPLE_RATE,
+                    AUDIO_CHANNELS,
+                    AUDIO_ENCODING,
+                    bufSize,
+                    AudioTrack.MODE_STREAM
                 )
-                .setAudioFormat(
-                    AudioFormat.Builder()
-                        .setSampleRate(AUDIO_SAMPLE_RATE)
-                        .setEncoding(AUDIO_ENCODING)
-                        .setChannelMask(AUDIO_CHANNELS)
-                        .build()
-                )
-                .setBufferSizeInBytes(bufSize)
-                .setTransferMode(AudioTrack.MODE_STREAM)
-                .build()
+            }
 
             audioTrack?.play()
         } catch (e: Exception) {
-            audioTrack = null  // التشغيل يعمل بدون صوت
+            audioTrack = null
         }
     }
 
@@ -332,7 +352,7 @@ class LrecPlayerActivity : AppCompatActivity(), SurfaceHolder.Callback {
     // ══════════════════════════════════════════════════════════════
     override fun surfaceCreated(holder: SurfaceHolder) {
         surfaceReady = true
-        if (screenFrames.isNotEmpty()) startPlayback()
+        if (screenFrames.isNotEmpty() && parser != null) startPlayback()
     }
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
@@ -365,101 +385,78 @@ class LrecPlayerActivity : AppCompatActivity(), SurfaceHolder.Callback {
     private fun onPlaybackEnded() {
         isPlaying = false
         btnPlayPause.setImageResource(R.drawable.ic_play)
-        currentFrameIndex = screenFrames.size - 1
+        currentFrameIndex = (screenFrames.size - 1).coerceAtLeast(0)
         updateProgressUI()
         showControls()
     }
 
-    /** رسم الإطار رقم idx على السطح */
     private fun renderFrame(idx: Int) {
         if (idx < 0 || idx >= screenFrames.size) return
+        val frame  = screenFrames[idx]
+        val bitmap = screenBitmap ?: return
+        val p      = parser ?: return
 
-        val frame    = screenFrames[idx]
-        val bitmap   = screenBitmap ?: return
-        val p        = parser    ?: return
-
-        // فك تشفير الإطار وتطبيقه على الـ Bitmap
         val frameData = p.decodeScreenFrame(frame)
-        if (frameData != null) {
-            p.applyFrameToBitmap(bitmap, frameData)
-        }
+        if (frameData != null) p.applyFrameToBitmap(bitmap, frameData)
 
-        // تشغيل الصوت المرتبط بهذا التوقيت
         val audioFrame = p.getFrameAtTime(frame.timestamp)
-        if (audioFrame != null && audioFrame.type == LrecParser.TYPE_AUDIO) {
+        if (audioFrame?.type == LrecParser.TYPE_AUDIO) {
             audioTrack?.write(audioFrame.rawData, 0, audioFrame.rawData.size)
         }
 
-        // رسم الـ Bitmap على السطح
         drawBitmapToSurface(bitmap)
     }
 
-    /** رسم الحالة الحالية دون تقدم */
     private fun renderCurrentState() {
         screenBitmap?.let { drawBitmapToSurface(it) }
     }
 
-    /** رسم Bitmap على السطح مع ملاءمة النسبة */
     private fun drawBitmapToSurface(bitmap: Bitmap) {
         if (!surfaceReady) return
-        val holder = surfaceView.holder
-        val canvas: Canvas = holder.lockCanvas() ?: return
-
+        val canvas: Canvas = surfaceView.holder.lockCanvas() ?: return
         try {
             canvas.drawColor(Color.BLACK)
-
-            val sw = surfaceView.width.toFloat()
-            val sh = surfaceView.height.toFloat()
-            val bw = bitmap.width.toFloat()
-            val bh = bitmap.height.toFloat()
-
+            val sw    = surfaceView.width.toFloat()
+            val sh    = surfaceView.height.toFloat()
+            val bw    = bitmap.width.toFloat()
+            val bh    = bitmap.height.toFloat()
             if (bw == 0f || bh == 0f) return
-
-            // حساب الحجم مع الحفاظ على النسبة (letterbox)
-            val scale  = minOf(sw / bw, sh / bh)
-            val dw     = (bw * scale).toInt()
-            val dh     = (bh * scale).toInt()
-            val left   = ((sw - dw) / 2).toInt()
-            val top    = ((sh - dh) / 2).toInt()
-
+            val scale = minOf(sw / bw, sh / bh)
+            val dw    = (bw * scale).toInt()
+            val dh    = (bh * scale).toInt()
+            val left  = ((sw - dw) / 2).toInt()
+            val top   = ((sh - dh) / 2).toInt()
             destRect.set(left, top, left + dw, top + dh)
             canvas.drawBitmap(bitmap, null, destRect, bitmapPaint)
         } finally {
-            holder.unlockCanvasAndPost(canvas)
+            surfaceView.holder.unlockCanvasAndPost(canvas)
         }
     }
 
     // ══════════════════════════════════════════════════════════════
-    //  أدوات التحكم
+    //  أزرار التحكم
     // ══════════════════════════════════════════════════════════════
     private fun setupControls() {
         btnBack.setOnClickListener { finish() }
 
         btnPlayPause.setOnClickListener {
             pulse(it)
-            if (isPlaying) pausePlayback() else {
+            if (isPlaying) pausePlayback()
+            else {
                 if (currentFrameIndex >= screenFrames.size) currentFrameIndex = 0
                 startPlayback()
             }
             resetHideTimer()
         }
 
-        btnForward.setOnClickListener {
-            pulse(it)
-            seekByFrames(+25)  // +5 ثوانٍ (5fps × 5s)
-            resetHideTimer()
-        }
-
-        btnRewind.setOnClickListener {
-            pulse(it)
-            seekByFrames(-25)
-            resetHideTimer()
-        }
+        btnForward.setOnClickListener { pulse(it); seekByFrames(+25); resetHideTimer() }
+        btnRewind.setOnClickListener  { pulse(it); seekByFrames(-25); resetHideTimer() }
 
         btnChat.setOnClickListener {
-            chatVisible = !chatVisible
-            chatOverlay.visibility = if (chatVisible) View.VISIBLE else View.GONE
-            resetHideTimer()
+            if (lrecDrawerLayout.isDrawerOpen(Gravity.END))
+                lrecDrawerLayout.closeDrawer(Gravity.END)
+            else
+                lrecDrawerLayout.openDrawer(Gravity.END)
         }
 
         btnRotate.setOnClickListener {
@@ -476,20 +473,20 @@ class LrecPlayerActivity : AppCompatActivity(), SurfaceHolder.Callback {
     private fun seekByFrames(delta: Int) {
         val wasPlaying = isPlaying
         if (wasPlaying) pausePlayback()
-        currentFrameIndex = (currentFrameIndex + delta).coerceIn(0, screenFrames.size - 1)
+        currentFrameIndex = (currentFrameIndex + delta)
+            .coerceIn(0, (screenFrames.size - 1).coerceAtLeast(0))
         renderFrame(currentFrameIndex)
         updateProgressUI()
         if (wasPlaying) startPlayback()
     }
 
     private fun seekToProgress(progress: Int) {
-        val totalFrames = screenFrames.size
-        if (totalFrames == 0) return
-        val targetFrame = (progress.toLong() * totalFrames / 1000L).toInt()
-            .coerceIn(0, totalFrames - 1)
+        val total = screenFrames.size
+        if (total == 0) return
+        val target     = (progress.toLong() * total / 1000L).toInt().coerceIn(0, total - 1)
         val wasPlaying = isPlaying
         if (wasPlaying) pausePlayback()
-        currentFrameIndex = targetFrame
+        currentFrameIndex = target
         renderFrame(currentFrameIndex)
         updateProgressUI()
         if (wasPlaying) startPlayback()
@@ -500,9 +497,7 @@ class LrecPlayerActivity : AppCompatActivity(), SurfaceHolder.Callback {
         seekBar.max = 1000
         seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(sb: SeekBar, p: Int, fromUser: Boolean) {
-                if (fromUser) {
-                    updateProgressFillOnly(p, 1000)
-                }
+                if (fromUser) updateProgressFillOnly(p, 1000)
             }
             override fun onStartTrackingTouch(sb: SeekBar) {
                 isDraggingSeekBar = true
@@ -520,10 +515,9 @@ class LrecPlayerActivity : AppCompatActivity(), SurfaceHolder.Callback {
         if (isDraggingSeekBar) return
         val total = screenFrames.size
         if (total == 0) return
-        val prog = (currentFrameIndex * 1000L / total).toInt()
-        seekBar.progress = prog
+        val prog  = (currentFrameIndex * 1000L / total).toInt()
+        seekBar.progress   = prog
         updateProgressFillOnly(prog, 1000)
-
         val curMs = currentFrameIndex.toLong() * LrecParser.MS_PER_FRAME
         val durMs = parser?.getDurationMs() ?: 0L
         tvCurrentTime.text = formatTime(curMs)
@@ -542,14 +536,22 @@ class LrecPlayerActivity : AppCompatActivity(), SurfaceHolder.Callback {
         }
     }
 
-    // ── إيماءات اللمس (صوت + سطوع) ──────────────────────────────
+    // ══════════════════════════════════════════════════════════════
+    //  إيماءات اللمس
+    // ══════════════════════════════════════════════════════════════
     private fun setupTouchGestures() {
         val gd = GestureDetector(this,
             object : GestureDetector.SimpleOnGestureListener() {
+
+                // ✅ نقرة واحدة: تُظهر أو تُخفي أزرار التحكم فوراً
+                //    وتُعيد ضبط مؤقت الدقيقتين عند الإظهار
                 override fun onSingleTapUp(e: MotionEvent): Boolean {
+                    if (lrecDrawerLayout.isDrawerOpen(Gravity.END)) return false
                     if (controlsVisible) hideControls() else showControls()
                     return true
                 }
+
+                // نقرة مزدوجة: تشغيل/إيقاف مؤقت
                 override fun onDoubleTap(e: MotionEvent): Boolean {
                     pulse(btnPlayPause)
                     if (isPlaying) pausePlayback() else startPlayback()
@@ -573,8 +575,16 @@ class LrecPlayerActivity : AppCompatActivity(), SurfaceHolder.Callback {
                             GestureType.BRIGHTNESS else GestureType.VOLUME
                     }
                     when (gestureType) {
-                        GestureType.VOLUME     -> { applyVolumeDelta(-dy / 600f); gestureStartY = event.y; true }
-                        GestureType.BRIGHTNESS -> { applyBrightnessDelta(-dy / 600f); gestureStartY = event.y; true }
+                        GestureType.VOLUME -> {
+                            applyVolumeDelta(-dy / 600f)
+                            gestureStartY = event.y
+                            true
+                        }
+                        GestureType.BRIGHTNESS -> {
+                            applyBrightnessDelta(-dy / 600f)
+                            gestureStartY = event.y
+                            true
+                        }
                         else -> false
                     }
                 }
@@ -586,7 +596,7 @@ class LrecPlayerActivity : AppCompatActivity(), SurfaceHolder.Callback {
         }
     }
 
-    // ── ضبط الصوت والسطوع ────────────────────────────────────────
+    // ── ضبط الصوت ─────────────────────────────────────────────────
     private fun applyVolumeDelta(delta: Float) {
         val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
         val curVol = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
@@ -600,10 +610,11 @@ class LrecPlayerActivity : AppCompatActivity(), SurfaceHolder.Callback {
         showOverlay(volumeOverlay)
     }
 
+    // ── ضبط السطوع ────────────────────────────────────────────────
     private fun applyBrightnessDelta(delta: Float) {
         val lp = window.attributes
-        var b = if (lp.screenBrightness < 0f) 0.5f else lp.screenBrightness
-        b = (b + delta).coerceIn(0.01f, 1f)
+        var b  = if (lp.screenBrightness < 0f) 0.5f else lp.screenBrightness
+        b      = (b + delta).coerceIn(0.01f, 1f)
         lp.screenBrightness = b
         window.attributes   = lp
         val pct = (b * 100).toInt()
@@ -617,7 +628,7 @@ class LrecPlayerActivity : AppCompatActivity(), SurfaceHolder.Callback {
     private fun showOverlay(overlay: View) {
         if (overlay.visibility != View.VISIBLE) {
             overlay.visibility = View.VISIBLE
-            overlay.alpha = 0f
+            overlay.alpha      = 0f
             overlay.animate().alpha(1f).setDuration(150).start()
         }
         overlayRunnable?.let { handler.removeCallbacks(it) }
@@ -628,7 +639,16 @@ class LrecPlayerActivity : AppCompatActivity(), SurfaceHolder.Callback {
         handler.postDelayed(overlayRunnable!!, 1800)
     }
 
-    // ── إظهار/إخفاء التحكم ───────────────────────────────────────
+    // ══════════════════════════════════════════════════════════════
+    //  إظهار وإخفاء أزرار التحكم
+    //
+    //  ✅ طريقتان للإخفاء كما في مشغلك الأصلي:
+    //     1 — تلقائي بعد دقيقتين (HIDE_DELAY = 120,000ms)
+    //     2 — نقرة واحدة على الشاشة تخفيها فوراً
+    //
+    //  ✅ الإظهار: نقرة واحدة على الشاشة
+    //     وبعد الإظهار يبدأ العدّ من جديد لدقيقتين
+    // ══════════════════════════════════════════════════════════════
     private fun showControls() {
         if (controlsVisible) { resetHideTimer(); return }
         controlsVisible = true
@@ -636,11 +656,13 @@ class LrecPlayerActivity : AppCompatActivity(), SurfaceHolder.Callback {
             v.visibility = View.VISIBLE
             v.animate().alpha(1f).translationY(0f).setDuration(200).start()
         }
+        // ✅ ابدأ العدّ التنازلي لدقيقتين بعد كل ظهور
         scheduleHide()
     }
 
     private fun hideControls() {
         if (!controlsVisible) return
+        // ✅ التعديل 2: تختفي الأزرار دائماً بدون أي استثناء
         controlsVisible = false
         lrecPlayerControls.animate().alpha(0f).translationY(50f).setDuration(250)
             .withEndAction { lrecPlayerControls.visibility = View.INVISIBLE }.start()
@@ -648,8 +670,16 @@ class LrecPlayerActivity : AppCompatActivity(), SurfaceHolder.Callback {
             .withEndAction { lrecTopBar.visibility = View.INVISIBLE }.start()
     }
 
-    private fun scheduleHide()    { handler.removeCallbacks(hideRunnable); handler.postDelayed(hideRunnable, HIDE_DELAY) }
-    private fun resetHideTimer()  { if (!controlsVisible) showControls() else scheduleHide() }
+    // scheduleHide: يضبط مؤقت دقيقتين
+    private fun scheduleHide() {
+        handler.removeCallbacks(hideRunnable)
+        handler.postDelayed(hideRunnable, HIDE_DELAY)
+    }
+
+    // resetHideTimer: يُظهر الأزرار إن كانت مخفية، ثم يعيد ضبط المؤقت
+    private fun resetHideTimer() {
+        if (!controlsVisible) showControls() else scheduleHide()
+    }
 
     // ── شاشة التحميل والخطأ ──────────────────────────────────────
     private fun showLoading(msg: String) {
@@ -669,14 +699,6 @@ class LrecPlayerActivity : AppCompatActivity(), SurfaceHolder.Callback {
         errorLayout.visibility   = View.VISIBLE
         tvErrorMsg.text          = title
         tvErrorDetail.text       = detail
-    }
-
-    // ── قائمة المحادثة ────────────────────────────────────────────
-    private fun setupChatRecycler() {
-        chatRecyclerView.layoutManager = LinearLayoutManager(this).also {
-            it.stackFromEnd = true
-        }
-        chatRecyclerView.adapter = ChatAdapter(mutableListOf())
     }
 
     // ── مساعدات ───────────────────────────────────────────────────
@@ -706,15 +728,19 @@ class LrecPlayerActivity : AppCompatActivity(), SurfaceHolder.Callback {
     private val Int.dp get() = (this * resources.displayMetrics.density).toInt()
 
     // ── دورة حياة Activity ───────────────────────────────────────
-    override fun onPause()   { super.onPause();   pausePlayback() }
-    override fun onResume()  {
+    override fun onPause() {
+        super.onPause()
+        pausePlayback()
+    }
+
+    override fun onResume() {
         super.onResume()
         @Suppress("DEPRECATION")
         window.decorView.systemUiVisibility = (
-            View.SYSTEM_UI_FLAG_FULLSCREEN       or
-            View.SYSTEM_UI_FLAG_HIDE_NAVIGATION  or
-            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
-            View.SYSTEM_UI_FLAG_LAYOUT_STABLE    or
+            View.SYSTEM_UI_FLAG_FULLSCREEN          or
+            View.SYSTEM_UI_FLAG_HIDE_NAVIGATION     or
+            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY    or
+            View.SYSTEM_UI_FLAG_LAYOUT_STABLE       or
             View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
         )
     }
@@ -723,13 +749,18 @@ class LrecPlayerActivity : AppCompatActivity(), SurfaceHolder.Callback {
         super.onDestroy()
         handler.removeCallbacksAndMessages(null)
         try { audioTrack?.stop(); audioTrack?.release() } catch (e: Exception) {}
-        audioTrack   = null
+        audioTrack = null
         screenBitmap?.recycle()
         screenBitmap = null
     }
 
     @Suppress("DEPRECATION")
-    override fun onBackPressed() { super.onBackPressed() }
+    override fun onBackPressed() {
+        if (lrecDrawerLayout.isDrawerOpen(Gravity.END))
+            lrecDrawerLayout.closeDrawer(Gravity.END)
+        else
+            super.onBackPressed()
+    }
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -747,14 +778,14 @@ class ChatAdapter(
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
         val v = android.view.LayoutInflater.from(parent.context)
             .inflate(android.R.layout.simple_list_item_2, parent, false)
-        v.setPadding(8, 6, 8, 6)
-        (v.findViewById<TextView>(android.R.id.text1)).apply {
-            setTextColor(Color.parseColor("#88AAAAFF"))
+        v.setPadding(8, 8, 8, 8)
+        v.findViewById<TextView>(android.R.id.text1).apply {
+            setTextColor(parent.context.resources.getColor(R.color.lib_text_secondary))
             textSize = 10f
         }
-        (v.findViewById<TextView>(android.R.id.text2)).apply {
-            setTextColor(Color.WHITE)
-            textSize = 12f
+        v.findViewById<TextView>(android.R.id.text2).apply {
+            setTextColor(parent.context.resources.getColor(R.color.lib_text_primary))
+            textSize = 13f
         }
         return VH(v)
     }
