@@ -18,7 +18,9 @@
     <string name="settings_title">Settings</string>
     <string name="toggle_theme">Toggle Theme</string>
     <string name="change_language">Change Language</string>
+    <!-- ✅ Two separate strings for the two states -->
     <string name="show_hidden_files">Show Hidden Files</string>
+    <string name="hide_hidden_files">Hide Hidden Files</string>
     <string name="close">Close</string>
 
     <!-- Toast Messages -->
