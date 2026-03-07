@@ -59,8 +59,8 @@ class VideoLibraryActivity : AppCompatActivity() {
 
     private lateinit var prefs: SharedPreferences
 
-    private val allVideos   = mutableListOf<VideoItem>()
-    private val folderList  = mutableListOf<FolderItem>()
+    private val allVideos  = mutableListOf<VideoItem>()
+    private val folderList = mutableListOf<FolderItem>()
     private var showingFolders = true
     private var currentFolder: FolderItem? = null
     private var showHidden = false
@@ -72,8 +72,8 @@ class VideoLibraryActivity : AppCompatActivity() {
 
     // ─── تطبيق اللغة قبل إنشاء الواجهة ──────────────────────────
     override fun attachBaseContext(newBase: android.content.Context) {
-        val prefs = newBase.getSharedPreferences("lrec_prefs", MODE_PRIVATE)
-        val lang  = prefs.getString("language", "ar") ?: "ar"
+        val prefs  = newBase.getSharedPreferences("lrec_prefs", MODE_PRIVATE)
+        val lang   = prefs.getString("language", "ar") ?: "ar"
         val locale = Locale(lang)
         Locale.setDefault(locale)
         val config = Configuration(newBase.resources.configuration)
@@ -89,11 +89,9 @@ class VideoLibraryActivity : AppCompatActivity() {
 
         applyTheme()
 
-        @Suppress("DEPRECATION")
-        window.decorView.systemUiVisibility = (
-            View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
-            View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-        )
+        // ✅ الإصلاح: حُذفت علامة LAYOUT_FULLSCREEN التي كانت تجعل
+        //    المحتوى يرسم خلف شريط الحالة مسبّبةً التداخل مع الساعة
+        //    والبطارية. هذه الشاشة مكتبة عادية ولا تحتاج وضع fullscreen.
 
         setContentView(R.layout.activity_library)
         initViews()
@@ -127,22 +125,20 @@ class VideoLibraryActivity : AppCompatActivity() {
             checkPermissionAndLoad()
         }
         btnMenuTop.setOnClickListener { drawerLayout.openDrawer(GravityCompat.START) }
-        btnBack.setOnClickListener    { handleBackNavigation() }
+        btnBack.setOnClickListener   { handleBackNavigation() }
     }
 
-    // ─── القائمة الجانبية: فقط "الإعدادات" و"تحديث" ─────────────
+    // ─── القائمة الجانبية ────────────────────────────────────────
     private fun setupDrawer() {
         navigationView.setNavigationItemSelectedListener { item ->
             when (item.itemId) {
 
-                // ✅ زر الإعدادات → يفتح حوار يحوي 3 خيارات
                 R.id.lib_nav_settings -> {
                     drawerLayout.closeDrawer(GravityCompat.START)
                     showSettingsDialog()
                     true
                 }
 
-                // ✅ زر التحديث
                 R.id.lib_nav_refresh -> {
                     drawerLayout.closeDrawer(GravityCompat.START)
                     btnRefreshTop.animate().rotationBy(360f).setDuration(500).start()
@@ -155,11 +151,10 @@ class VideoLibraryActivity : AppCompatActivity() {
         }
     }
 
-    // ─── حوار الإعدادات (تبديل المظهر / تغيير اللغة / الملفات المخفية) ──
+    // ─── حوار الإعدادات ──────────────────────────────────────────
     private fun showSettingsDialog() {
         val isDark = prefs.getBoolean("dark_mode", true)
 
-        // ✅ استخدام @string للحصول على النص باللغة الصحيحة
         val options = arrayOf(
             getString(R.string.toggle_theme),
             getString(R.string.change_language),
@@ -171,7 +166,6 @@ class VideoLibraryActivity : AppCompatActivity() {
             .setItems(options) { _, which ->
                 when (which) {
 
-                    // ── تبديل المظهر ─────────────────────────────
                     0 -> {
                         val newDark = !isDark
                         prefs.edit().putBoolean("dark_mode", newDark).apply()
@@ -184,23 +178,19 @@ class VideoLibraryActivity : AppCompatActivity() {
                             getString(if (newDark) R.string.theme_dark else R.string.theme_light),
                             Toast.LENGTH_SHORT
                         ).show()
-                        // ✅ إعادة إنشاء الواجهة لتطبيق المظهر الجديد فوراً
                         recreate()
                     }
 
-                    // ── تغيير اللغة ──────────────────────────────
                     1 -> {
                         val newLang = if (currentLang == "ar") "en" else "ar"
                         prefs.edit().putString("language", newLang).apply()
                         Toast.makeText(this, getString(R.string.lang_changed), Toast.LENGTH_SHORT).show()
-                        // إعادة تشغيل الـ Activity لتطبيق اللغة
                         val intent = Intent(this, VideoLibraryActivity::class.java)
                         intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK)
                         startActivity(intent)
                         finish()
                     }
 
-                    // ── إظهار / إخفاء الملفات المخفية ────────────
                     2 -> {
                         showHidden = !showHidden
                         prefs.edit().putBoolean("show_hidden", showHidden).apply()
@@ -294,7 +284,6 @@ class VideoLibraryActivity : AppCompatActivity() {
                     MediaStore.Video.Media.EXTERNAL_CONTENT_URI, id.toString()
                 )
 
-                // ✅ فلترة الملفات المخفية: تحقق من أي جزء في المسار يبدأ بنقطة
                 if (isHiddenPath(data) && !showHidden) continue
 
                 list.add(VideoItem(id, title, duration, size, uri, bucket, data))
@@ -303,7 +292,6 @@ class VideoLibraryActivity : AppCompatActivity() {
         return list
     }
 
-    // يكشف الملفات المخفية بالتحقق من كل جزء في المسار
     private fun isHiddenPath(filePath: String): Boolean {
         if (filePath.isBlank()) return false
         return filePath.split("/").any { segment ->
@@ -396,7 +384,6 @@ class FolderAdapter(
     override fun onBindViewHolder(holder: VH, position: Int) {
         val f = items[position]
         holder.tvName.text  = f.name
-        // ✅ استخدام getString من context بدلاً من النص المشفّر
         holder.tvCount.text = "${f.videoCount} ${holder.tvCount.context.getString(R.string.videos)}"
         holder.root.setOnClickListener {
             it.animate().scaleX(0.97f).scaleY(0.97f).setDuration(80).withEndAction {
