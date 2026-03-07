@@ -68,6 +68,12 @@ class VideoLibraryActivity : AppCompatActivity() {
 
     companion object {
         const val REQUEST_PERMISSION = 2001
+
+        // ✅ الإصلاح الجذري لخطأ "Unresolved reference: IS_HIDDEN":
+        //    نعرّف اسم العمود كنص ثابت بدلاً من MediaStore.MediaColumns.IS_HIDDEN
+        //    لأن المترجم لا يجد هذا الثابت عند بعض إعدادات compileSdk.
+        //    القيمة "is_hidden" هي اسم العمود الفعلي في قاعدة بيانات MediaStore.
+        private const val COLUMN_IS_HIDDEN = "is_hidden"
     }
 
     // ─── تطبيق اللغة قبل إنشاء الواجهة ──────────────────────────
@@ -148,9 +154,7 @@ class VideoLibraryActivity : AppCompatActivity() {
     private fun showSettingsDialog() {
         val isDark = prefs.getBoolean("dark_mode", true)
 
-        // ✅ إصلاح المشكلة 2: النص يعكس الحالة الحالية لـ showHidden
-        //    إذا كانت الملفات المخفية ظاهرة حالياً → نعرض "إخفاء"
-        //    إذا كانت مخفية حالياً              → نعرض "إظهار"
+        // النص يعكس الحالة الحالية: إظهار أو إخفاء
         val options = arrayOf(
             getString(R.string.toggle_theme),
             getString(R.string.change_language),
@@ -259,26 +263,23 @@ class VideoLibraryActivity : AppCompatActivity() {
             MediaStore.Video.Media.BUCKET_DISPLAY_NAME
         )
 
-        // ✅ إصلاح المشكلة 1:
+        // ✅ Android 10+ (API 29+):
+        //    نستخدم COLUMN_IS_HIDDEN = "is_hidden" (نص ثابت آمن للمترجم)
+        //    بدلاً من MediaStore.MediaColumns.IS_HIDDEN الذي يسبب خطأ الترجمة.
         //
-        // على Android 10+ (API 29+) يُضيف MediaStore عمود IS_HIDDEN ويُخفي
-        // الملفات المبدوءة بنقطة من نتائج الاستعلام الافتراضي تماماً،
-        // لذلك يجب أن نُضيف شرط IS_HIDDEN IN (0,1) عند الاستعلام حتى
-        // تُعاد هذه الملفات للـ cursor أصلاً.
+        //    showHidden=true  → "$COLUMN_IS_HIDDEN IN (0, 1)" يجلب كل شيء
+        //    showHidden=false → "$COLUMN_IS_HIDDEN = 0"       يجلب غير المخفي فقط
         //
-        // على Android 9 وما دون: MediaStore يُعيد الملفات المخفية بشكل
-        // طبيعي ونرشّحها يدوياً بدالة isHiddenPath.
+        // ✅ Android 9 وما دون:
+        //    لا يوجد عمود is_hidden في MediaStore، نضع selection=null
+        //    ونصفّي يدوياً بعد الجلب عبر isHiddenPath().
 
         val selection: String? = when {
             showHidden && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ->
-                // أعد كل شيء: المخفي وغير المخفي معاً
-                "${MediaStore.MediaColumns.IS_HIDDEN} IN (0, 1)"
+                "$COLUMN_IS_HIDDEN IN (0, 1)"
             !showHidden && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ->
-                // أعد غير المخفي فقط (هذا هو السلوك الافتراضي لكن نصرّح به صراحةً)
-                "${MediaStore.MediaColumns.IS_HIDDEN} = 0"
-            else ->
-                // Android 9 وما دون: لا يوجد IS_HIDDEN، نتركه null ونُصفّي يدوياً
-                null
+                "$COLUMN_IS_HIDDEN = 0"
+            else -> null
         }
 
         val cursor: Cursor? = contentResolver.query(
@@ -308,7 +309,7 @@ class VideoLibraryActivity : AppCompatActivity() {
                     MediaStore.Video.Media.EXTERNAL_CONTENT_URI, id.toString()
                 )
 
-                // للإصدارات الأقدم من Android 10: نُصفّي يدوياً بالمسار
+                // للإصدارات الأقدم من Android 10: تصفية يدوية بالمسار
                 if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
                     if (isHiddenPath(data) && !showHidden) continue
                 }
