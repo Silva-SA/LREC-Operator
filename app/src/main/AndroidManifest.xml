@@ -1,86 +1,69 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- صلاحيات مكتبة الفيديو العادية (MP4) -->
-    <uses-permission android:name="android.permission.INTERNET"/>
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <!-- الأذونات الضرورية فقط -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
-        android:maxSdkVersion="32"/>
-    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"/>
+        android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"
+        android:minSdkVersion="33" />
+    <uses-permission android:name="android.permission.INTERNET" />
 
-    <!--
-        ملاحظة: READ_MEDIA_IMAGES حُذفت لأنها غير مطلوبة لملفات .lrec
-        فتح .lrec يعتمد على ACTION_OPEN_DOCUMENT الذي لا يحتاج أي صلاحية
-    -->
+    <!-- ملاحظة: READ_MEDIA_IMAGES حُذفت — غير مطلوبة لـ ACTION_OPEN_DOCUMENT -->
 
     <application
         android:allowBackup="true"
-        android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
-        android:theme="@style/Theme.LRECOperator"
-        android:supportsRtl="true">
+        android:supportsRtl="true"
+        android:theme="@style/Theme.LRECOperator">
 
-        <!-- 1. شاشة الترحيب -->
+        <!-- Splash Screen -->
         <activity
             android:name=".SplashActivity"
             android:exported="true"
-            android:screenOrientation="portrait"
-            android:noHistory="true">
+            android:theme="@style/Theme.LRECOperator.NoActionBar">
             <intent-filter>
-                <action android:name="android.intent.action.MAIN"/>
-                <category android:name="android.intent.category.LAUNCHER"/>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
-        <!-- 2. مكتبة الفيديو -->
+        <!-- Main Activity -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize" />
+
+        <!-- Settings Activity -->
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false" />
+
+        <!-- Video Library Activity -->
         <activity
             android:name=".VideoLibraryActivity"
             android:exported="false"
-            android:screenOrientation="portrait"/>
+            android:configChanges="orientation|screenSize" />
 
-        <!-- 3. الإعدادات -->
-        <activity
-            android:name=".SettingsActivity"
-            android:exported="false"
-            android:screenOrientation="portrait"/>
-
-        <!-- 4. مشغل الفيديو العادي (MP4 / AVI) -->
-        <activity
-            android:name=".MainActivity"
-            android:exported="true"
-            android:screenOrientation="sensorLandscape"
-            android:configChanges="orientation|screenSize|keyboardHidden"
-            android:windowSoftInputMode="adjustNothing">
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW"/>
-                <category android:name="android.intent.category.DEFAULT"/>
-                <data android:mimeType="video/*"/>
-            </intent-filter>
-        </activity>
-
-        <!-- 5. مشغل ملفات .lrec -->
+        <!-- LREC Player Activity -->
         <activity
             android:name=".LrecPlayerActivity"
-            android:exported="true"
-            android:screenOrientation="sensorLandscape"
+            android:exported="false"
             android:configChanges="orientation|screenSize|keyboardHidden"
-            android:windowSoftInputMode="adjustNothing">
+            android:screenOrientation="landscape"
+            android:windowSoftInputMode="adjustPan" />
 
-            <!--
-                application/octet-stream = النوع الذي يُرسله مدير الملفات
-                لأي ملف ذو امتداد غير معروف مثل .lrec
-            -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW"/>
-                <category android:name="android.intent.category.DEFAULT"/>
-                <category android:name="android.intent.category.BROWSABLE"/>
-                <data android:mimeType="application/octet-stream"/>
-                <data android:mimeType="application/x-lrec"/>
-                <data android:mimeType="*/*"/>
-            </intent-filter>
-
-        </activity>
+        <!-- FileProvider للوصول للملفات -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.provider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
     </application>
 
