@@ -1,15 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
+    <!-- الثيم الرئيسي — يرث NoActionBar مباشرةً من المكتبة -->
     <style name="Theme.LRECOperator" parent="Theme.MaterialComponents.DayNight.NoActionBar">
         <item name="colorPrimary">@color/primary_color</item>
         <item name="colorPrimaryVariant">@color/primary_variant_color</item>
         <item name="colorSecondary">@color/secondary_color</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/black</item>
-        <!-- ✅ خلفية النافذة تتبع المظهر تلقائياً عبر lib_bg -->
         <item name="android:windowBackground">@color/lib_bg</item>
     </style>
+
+    <!--
+        ✅ ثيم بديل يُستخدم في SplashActivity
+           (نفس الثيم الأساسي — الاسم فقط يختلف للتوافق مع AndroidManifest)
+    -->
+    <style name="Theme.LRECOperator.NoActionBar" parent="Theme.LRECOperator" />
 
     <!--
         ✅ حوار الإعدادات يستخدم card_bg لتبديل خلفيته مع المظهر
