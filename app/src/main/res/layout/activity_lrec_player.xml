@@ -1,11 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-    activity_lrec_player.xml — النسخة المحدّثة
-    ✅ قائمة المحادثة جانبية منزلقة (DrawerLayout) متوافقة مع الثيم
-    ✅ الفيديو يملأ الشاشة كاملاً عند إخفاء المحادثة
-    ✅ ألوان القائمة تتغير تلقائياً مع الوضع الداكن/الفاتح
-    ✅ تدعم التدوير أفقي وعمودي
--->
 <androidx.drawerlayout.widget.DrawerLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -14,23 +7,25 @@
     android:layout_height="match_parent">
 
     <!-- ════════════════════════════════════════════════════════ -->
-    <!--  المحتوى الرئيسي — الفيديو + أدوات التحكم              -->
+    <!--  المحتوى الرئيسي                                        -->
     <!-- ════════════════════════════════════════════════════════ -->
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:background="#000000">
 
-        <!-- عرض الشاشة المُسجَّلة -->
-        <SurfaceView
-            android:id="@+id/lrecSurfaceView"
+        <!-- ✅ ImageView لعرض إطارات الـ LREC كـ Bitmap -->
+        <ImageView
+            android:id="@+id/imageViewScreen"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:layout_gravity="center"/>
+            android:scaleType="fitCenter"
+            android:layout_gravity="center"
+            android:background="#000000"/>
 
         <!-- شاشة التحميل -->
         <LinearLayout
-            android:id="@+id/loadingLayout"
+            android:id="@+id/layoutLoading"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:orientation="vertical"
@@ -39,7 +34,7 @@
             android:visibility="visible">
 
             <ProgressBar
-                android:id="@+id/loadingProgress"
+                android:id="@+id/progressBar"
                 android:layout_width="56dp"
                 android:layout_height="56dp"
                 android:indeterminateTint="#FFFFFF"/>
@@ -54,7 +49,7 @@
                 android:textSize="15sp"/>
 
             <TextView
-                android:id="@+id/tvLoadingDetail"
+                android:id="@+id/tvFrameInfo"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
@@ -183,7 +178,6 @@
                 android:singleLine="true"
                 android:textStyle="bold"/>
 
-            <!-- زر المحادثة — يفتح القائمة الجانبية اليمنى -->
             <ImageButton
                 android:id="@+id/lrecBtnChat"
                 android:layout_width="40dp"
@@ -218,6 +212,7 @@
             android:paddingTop="8dp"
             android:background="@drawable/gradient_bottom">
 
+            <!-- شريط التقدم -->
             <FrameLayout
                 android:layout_width="match_parent"
                 android:layout_height="28dp"
@@ -240,15 +235,16 @@
                     android:layout_gravity="center_vertical|start"
                     android:background="@drawable/bg_seekbar_thumb"/>
                 <SeekBar
-                    android:id="@+id/lrecSeekBar"
+                    android:id="@+id/seekBar"
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
                     android:progressDrawable="@android:color/transparent"
                     android:thumb="@android:color/transparent"
-                    android:max="1000"
+                    android:max="100"
                     android:splitTrack="false"/>
             </FrameLayout>
 
+            <!-- أزرار التحكم والوقت -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="48dp"
@@ -256,7 +252,7 @@
                 android:gravity="center_vertical">
 
                 <TextView
-                    android:id="@+id/lrecTvCurrentTime"
+                    android:id="@+id/tvCurrentTime"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="00:00"
@@ -268,16 +264,17 @@
                 <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1"/>
 
                 <ImageButton
-                    android:id="@+id/lrecBtnRewind"
+                    android:id="@+id/btnStop"
                     android:layout_width="44dp"
                     android:layout_height="44dp"
                     android:src="@drawable/ic_rewind"
                     android:tint="#FFFFFF"
                     android:background="@drawable/btn_control_ripple"
-                    android:padding="10dp"/>
+                    android:padding="10dp"
+                    android:contentDescription="توقف"/>
 
                 <ImageButton
-                    android:id="@+id/lrecBtnPlayPause"
+                    android:id="@+id/btnPlay"
                     android:layout_width="54dp"
                     android:layout_height="54dp"
                     android:layout_marginStart="4dp"
@@ -285,21 +282,23 @@
                     android:src="@drawable/ic_play"
                     android:tint="#FFFFFF"
                     android:background="@drawable/bg_play_button"
-                    android:padding="12dp"/>
+                    android:padding="12dp"
+                    android:contentDescription="تشغيل"/>
 
                 <ImageButton
-                    android:id="@+id/lrecBtnForward"
+                    android:id="@+id/btnPause"
                     android:layout_width="44dp"
                     android:layout_height="44dp"
                     android:src="@drawable/ic_forward"
                     android:tint="#FFFFFF"
                     android:background="@drawable/btn_control_ripple"
-                    android:padding="10dp"/>
+                    android:padding="10dp"
+                    android:contentDescription="إيقاف مؤقت"/>
 
                 <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1"/>
 
                 <TextView
-                    android:id="@+id/lrecTvDuration"
+                    android:id="@+id/tvTotalTime"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="00:00"
@@ -335,24 +334,12 @@
                 android:textColor="#FFFFFF"
                 android:textSize="16sp"
                 android:gravity="center"/>
-            <TextView
-                android:id="@+id/tvErrorDetail"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:text=""
-                android:textColor="#AAFFFFFF"
-                android:textSize="12sp"
-                android:gravity="center"/>
         </LinearLayout>
 
     </FrameLayout>
 
     <!-- ════════════════════════════════════════════════════════ -->
     <!--  قائمة المحادثة الجانبية المنزلقة من اليمين             -->
-    <!--  ✅ تستخدم @color/drawer_bg و @color/lib_toolbar         -->
-    <!--     وهما يتغيران تلقائياً بين الداكن والفاتح             -->
-    <!--     عبر ملفَي values/colors.xml و values-night/colors.xml-->
     <!-- ════════════════════════════════════════════════════════ -->
     <LinearLayout
         android:id="@+id/chatDrawerPanel"
@@ -363,7 +350,6 @@
         android:background="@color/drawer_bg"
         android:elevation="8dp">
 
-        <!-- رأس القائمة -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="56dp"
@@ -383,7 +369,6 @@
                 android:textSize="15sp"
                 android:textStyle="bold"/>
 
-            <!-- زر إغلاق (السهم يشير لليمين) -->
             <ImageButton
                 android:id="@+id/btnCloseChatDrawer"
                 android:layout_width="40dp"
@@ -396,23 +381,19 @@
                 android:rotation="180"/>
         </LinearLayout>
 
-        <!-- فاصل -->
         <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
             android:background="@color/card_stroke"/>
 
-        <!-- قائمة الرسائل -->
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/chatRecyclerView"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
             android:padding="8dp"
-            android:clipToPadding="false"
-            android:visibility="visible"/>
+            android:clipToPadding="false"/>
 
-        <!-- رسالة "لا توجد محادثة" -->
         <TextView
             android:id="@+id/tvNoChatMsg"
             android:layout_width="match_parent"
