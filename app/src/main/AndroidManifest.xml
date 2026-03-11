@@ -1,14 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- الأذونات الضرورية فقط -->
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+    <!-- Android 5–12 -->
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
-    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"
-        android:minSdkVersion="33" />
-    <uses-permission android:name="android.permission.INTERNET" />
 
-    <!-- ملاحظة: READ_MEDIA_IMAGES حُذفت — غير مطلوبة لـ ACTION_OPEN_DOCUMENT -->
+    <!-- Android 13+ -->
+    <uses-permission
+        android:name="android.permission.READ_MEDIA_VIDEO"
+        android:minSdkVersion="33" />
+
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:allowBackup="true"
@@ -29,7 +32,7 @@
             </intent-filter>
         </activity>
 
-        <!-- Main Activity -->
+        <!-- Main Activity (ExoPlayer) -->
         <activity
             android:name=".MainActivity"
             android:exported="false"
@@ -46,15 +49,32 @@
             android:exported="false"
             android:configChanges="orientation|screenSize" />
 
-        <!-- LREC Player Activity -->
+        <!-- LREC Player Activity
+             exported="true" لاستقبال ملفات .lrec من أي تطبيق -->
         <activity
             android:name=".LrecPlayerActivity"
-            android:exported="false"
+            android:exported="true"
             android:configChanges="orientation|screenSize|keyboardHidden"
-            android:screenOrientation="landscape"
-            android:windowSoftInputMode="adjustPan" />
+            android:screenOrientation="sensorLandscape"
+            android:windowSoftInputMode="adjustPan">
 
-        <!-- FileProvider للوصول للملفات -->
+            <!-- فتح ملف .lrec من مدير الملفات عبر content:// -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" android:mimeType="*/*" />
+            </intent-filter>
+
+            <!-- فتح ملف .lrec عبر file:// -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="file" android:mimeType="*/*" />
+            </intent-filter>
+
+        </activity>
+
+        <!-- FileProvider -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.provider"
