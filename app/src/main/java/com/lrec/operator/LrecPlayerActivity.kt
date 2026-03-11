@@ -1,5 +1,6 @@
 package com.lrec.operator
 
+import android.app.ActivityManager
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Bundle
@@ -19,7 +20,11 @@ import java.util.concurrent.atomic.AtomicInteger
 
 class LrecPlayerActivity : AppCompatActivity() {
 
-    private lateinit var screenView: ImageView
+    private var useGpu = false
+
+    private var glSurface: LrecGLSurface? = null
+    private var cpuImageView: ImageView? = null
+
     private lateinit var seekBar: SeekBar
     private lateinit var playBtn: ImageButton
     private lateinit var pauseBtn: ImageButton
@@ -51,7 +56,14 @@ class LrecPlayerActivity : AppCompatActivity() {
 
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
-        screenView = findViewById(R.id.imageScreen)
+        checkGpuSupport()
+
+        if (useGpu) {
+            glSurface = findViewById(R.id.glSurface)
+        } else {
+            cpuImageView = findViewById(R.id.imageScreen)
+        }
+
         seekBar = findViewById(R.id.seekBar)
         playBtn = findViewById(R.id.btnPlay)
         pauseBtn = findViewById(R.id.btnPause)
@@ -72,6 +84,14 @@ class LrecPlayerActivity : AppCompatActivity() {
         stopBtn.setOnClickListener {
             stopPlayback()
         }
+    }
+
+    private fun checkGpuSupport() {
+
+        val activityManager = getSystemService(ACTIVITY_SERVICE) as ActivityManager
+        val config = activityManager.deviceConfigurationInfo
+
+        useGpu = config.reqGlEsVersion >= 0x20000
     }
 
     private fun loadFile() {
@@ -97,7 +117,11 @@ class LrecPlayerActivity : AppCompatActivity() {
             )
 
             runOnUiThread {
-                screenView.setImageBitmap(bitmap)
+
+                if (!useGpu) {
+                    cpuImageView?.setImageBitmap(bitmap)
+                }
+
             }
 
         }.start()
@@ -131,7 +155,13 @@ class LrecPlayerActivity : AppCompatActivity() {
                 )
 
                 uiHandler.post {
-                    screenView.invalidate()
+
+                    if (useGpu) {
+                        glSurface?.updateFrame(bitmap!!)
+                    } else {
+                        cpuImageView?.invalidate()
+                    }
+
                 }
 
                 frameIndex.incrementAndGet()
