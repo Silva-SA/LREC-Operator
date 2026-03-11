@@ -129,6 +129,16 @@ class LrecParser(private val file: File) {
     private val _frames     = mutableListOf<LrecFrame>()
     private var _durationMs = 0L
 
+    // ── ✅ عدّادات الكتل المشفّرة (صوت + شات) ──────────────────────
+    var audioBlockCount: Int = 0
+        private set
+
+    var chatBlockCount: Int = 0
+        private set
+
+    val hasAudioBlocks: Boolean get() = audioBlockCount > 0
+    val hasChatBlocks:  Boolean get() = chatBlockCount  > 0
+
     // لوحة الألوان (256 لون - ARGB)
     // مُهيَّأة بالرمادي الافتراضي حتى نقرأ اللوحة الحقيقية
     private val colorPalette = IntArray(256) { i -> Color.rgb(i, i, i) }
@@ -201,25 +211,34 @@ class LrecParser(private val file: File) {
                     if (read == dataLen && blockData.size >= 8) {
                         val outerType = blockData[1].toInt() and 0xFF
 
-                        if (outerType == TYPE_VIEWPORT) {
-                            val subtype = classifyViewportBlock(blockData)
-
-                            when (subtype) {
-                                SUBTYPE_PALETTE -> {
-                                    extractPalette(blockData)
-                                }
-                                SUBTYPE_FULLFRAME, SUBTYPE_DELTA -> {
-                                    _frames.add(
-                                        LrecFrame(
-                                            fileOffset = pos,
-                                            type       = subtype,
-                                            dataLength = dataLen,
-                                            timestamp  = tsMs,
-                                            rawData    = blockData
+                        when (outerType) {
+                            TYPE_VIEWPORT -> {
+                                val subtype = classifyViewportBlock(blockData)
+                                when (subtype) {
+                                    SUBTYPE_PALETTE -> {
+                                        extractPalette(blockData)
+                                    }
+                                    SUBTYPE_FULLFRAME, SUBTYPE_DELTA -> {
+                                        _frames.add(
+                                            LrecFrame(
+                                                fileOffset = pos,
+                                                type       = subtype,
+                                                dataLength = dataLen,
+                                                timestamp  = tsMs,
+                                                rawData    = blockData
+                                            )
                                         )
-                                    )
-                                    tsMs += MS_PER_FRAME
+                                        tsMs += MS_PER_FRAME
+                                    }
                                 }
+                            }
+                            // ✅ عدّ كتل الصوت المشفّرة
+                            TYPE_NETWORK -> {
+                                audioBlockCount++
+                            }
+                            // ✅ عدّ كتل الشات المشفّرة
+                            TYPE_CHAT_RAW -> {
+                                chatBlockCount++
                             }
                         }
                     }
@@ -443,8 +462,8 @@ class LrecParser(private val file: File) {
     // ══════════════════════════════════════════════════════════════════
     fun getAllFrames()    : List<LrecFrame> = _frames.toList()
     fun getScreenFrames(): List<LrecFrame>  = _frames.toList()
-    fun getAudioFrames() : List<LrecFrame>  = emptyList()
-    fun getChatFrames()  : List<LrecFrame>  = emptyList()
+    fun getAudioFrames() : List<LrecFrame>  = emptyList()  // مشفّر — غير مدعوم
+    fun getChatFrames()  : List<LrecFrame>  = emptyList()  // مشفّر — غير مدعوم
     fun getDurationMs()  : Long             = _durationMs
     fun getTotalFrames() : Int              = _frames.size
     fun isPaletteLoaded(): Boolean          = paletteLoaded
