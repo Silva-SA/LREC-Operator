@@ -15,6 +15,7 @@ import androidx.appcompat.app.AppCompatActivity
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.ShortBuffer
+import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -47,6 +48,9 @@ class LrecPlayerActivity : AppCompatActivity() {
     private val uiHandler = Handler(Looper.getMainLooper())
 
     private var decodeThread: Thread? = null
+    private var renderThread: Thread? = null
+
+    private val frameQueue = LinkedBlockingQueue<Bitmap>(3)
 
     override fun onCreate(savedInstanceState: Bundle?) {
 
@@ -73,17 +77,9 @@ class LrecPlayerActivity : AppCompatActivity() {
 
         loadFile()
 
-        playBtn.setOnClickListener {
-            startPlayback()
-        }
-
-        pauseBtn.setOnClickListener {
-            pausePlayback()
-        }
-
-        stopBtn.setOnClickListener {
-            stopPlayback()
-        }
+        playBtn.setOnClickListener { startPlayback() }
+        pauseBtn.setOnClickListener { pausePlayback() }
+        stopBtn.setOnClickListener { stopPlayback() }
     }
 
     private fun checkGpuSupport() {
@@ -133,6 +129,12 @@ class LrecPlayerActivity : AppCompatActivity() {
 
         isPlaying.set(true)
 
+        startDecoder()
+        startRenderer()
+    }
+
+    private fun startDecoder() {
+
         decodeThread = Thread {
 
             while (isPlaying.get()) {
@@ -150,21 +152,41 @@ class LrecPlayerActivity : AppCompatActivity() {
                     pixelBuffer
                 )
 
-                bitmap?.copyPixelsFromBuffer(
+                val frameBitmap = bitmap?.copy(Bitmap.Config.RGB_565, true)
+
+                frameBitmap?.copyPixelsFromBuffer(
                     ShortBuffer.wrap(pixelBuffer)
                 )
+
+                if (frameQueue.remainingCapacity() > 0) {
+                    frameQueue.offer(frameBitmap)
+                }
+
+                frameIndex.incrementAndGet()
+            }
+
+        }
+
+        decodeThread?.start()
+    }
+
+    private fun startRenderer() {
+
+        renderThread = Thread {
+
+            while (isPlaying.get()) {
+
+                val frameBitmap = frameQueue.take()
 
                 uiHandler.post {
 
                     if (useGpu) {
-                        glSurface?.updateFrame(bitmap!!)
+                        glSurface?.updateFrame(frameBitmap)
                     } else {
-                        cpuImageView?.invalidate()
+                        cpuImageView?.setImageBitmap(frameBitmap)
                     }
 
                 }
-
-                frameIndex.incrementAndGet()
 
                 try {
                     Thread.sleep(16)
@@ -175,7 +197,7 @@ class LrecPlayerActivity : AppCompatActivity() {
 
         }
 
-        decodeThread?.start()
+        renderThread?.start()
     }
 
     private fun pausePlayback() {
@@ -190,6 +212,7 @@ class LrecPlayerActivity : AppCompatActivity() {
 
         frameIndex.set(0)
 
+        frameQueue.clear()
     }
 
     private fun copyToCache(uri: Uri): String {
@@ -223,6 +246,7 @@ class LrecPlayerActivity : AppCompatActivity() {
         isPlaying.set(false)
 
         decodeThread?.interrupt()
+        renderThread?.interrupt()
 
         if (engineHandle != 0L) {
             LrecEngine.close(engineHandle)
