@@ -16,11 +16,8 @@ object LrecEngine {
 
     external fun getTotalFrames(handle: Long): Int
 
-    external fun getDuration(handle: Long): Long
-
-    external fun decodeFrame565(
+    external fun decodeFrameNative(
         handle: Long,
-        frame: Int,
-        buffer: ShortArray?
-    ): Boolean
+        frame: Int
+    ): ByteArray
 }
