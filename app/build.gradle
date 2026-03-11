@@ -9,18 +9,41 @@ android {
 
     defaultConfig {
         applicationId "com.lrec.operator"
-        minSdk 21
+        minSdk 21          // Android 5.0
         targetSdk 34
         versionCode 5
         versionName "5.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+
+        // ── دعم المعماريات الأربعة الرئيسية ──────────────────────────
+        ndk {
+            abiFilters "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
+        }
+
+        // ── إعدادات بناء المكتبة الأصلية ─────────────────────────────
+        externalNativeBuild {
+            cmake {
+                cppFlags "-std=c++17 -fexceptions -frtti"
+                arguments "-DANDROID_PLATFORM=android-21",
+                          "-DANDROID_STL=c++_static"
+            }
+        }
+    }
+
+    // ── مسار CMakeLists.txt ──────────────────────────────────────────
+    externalNativeBuild {
+        cmake {
+            path "src/main/cpp/CMakeLists.txt"
+            version "3.22.1"
+        }
     }
 
     buildTypes {
         release {
-            minifyEnabled     true
-            shrinkResources   true
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            minifyEnabled   true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'),
+                          'proguard-rules.pro'
         }
         debug {
             minifyEnabled   false
@@ -41,20 +64,17 @@ android {
 }
 
 dependencies {
-    // AndroidX الأساسية
     implementation 'androidx.core:core-ktx:1.12.0'
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.android.material:material:1.11.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+    implementation 'androidx.drawerlayout:drawerlayout:1.2.0'
 
-    // ✅ مكتبة Media3 (ExoPlayer) — ضرورية لـ PlayerView في activity_main.xml
-    //    وللـ imports في MainActivity.kt
-    //    بدونها يفشل AAPT بخطأ: attribute use_controller/use_artwork not found
+    // ExoPlayer للفيديو العادي في MainActivity
     implementation 'androidx.media3:media3-exoplayer:1.2.1'
     implementation 'androidx.media3:media3-ui:1.2.1'
-    implementation 'androidx.media3:media3-common:1.2.1'
 
-    // Room للمكتبة
+    // Room
     implementation 'androidx.room:room-runtime:2.6.1'
     implementation 'androidx.room:room-ktx:2.6.1'
     annotationProcessor 'androidx.room:room-compiler:2.6.1'
@@ -62,7 +82,6 @@ dependencies {
     // Coroutines
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
 
-    // اختبارات
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
