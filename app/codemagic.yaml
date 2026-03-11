@@ -1,0 +1,73 @@
+workflows:
+  android-release:
+    name: LREC Operator - Android Build
+    max_build_duration: 60
+    environment:
+      android_signing:
+        - keystore_reference
+      groups:
+        - google_play
+      vars:
+        PACKAGE_NAME: "com.lrec.operator"
+      # ── تحديد إصدارات الأدوات المطلوبة ─────────────────────────
+      java: 17
+    scripts:
+      # ── الخطوة 1: تثبيت NDK و CMake ──────────────────────────
+      - name: Install NDK and CMake
+        script: |
+          echo "y" | sdkmanager "ndk;25.2.9519653" 2>&1 | tail -5
+          echo "y" | sdkmanager "cmake;3.22.1"     2>&1 | tail -5
+          echo "NDK_PATH: $ANDROID_NDK_ROOT"
+
+      # ── الخطوة 2: منح صلاحيات التنفيذ لـ gradlew ─────────────
+      - name: Set execute permission on gradlew
+        script: chmod +x gradlew
+
+      # ── الخطوة 3: بناء APK (debug أولاً للاختبار) ─────────────
+      - name: Build Debug APK
+        script: |
+          ./gradlew assembleDebug \
+            -PANDROID_NDK_HOME=$ANDROID_NDK_ROOT \
+            --stacktrace 2>&1
+
+      # ── الخطوة 4: بناء APK Release ────────────────────────────
+      - name: Build Release APK
+        script: |
+          ./gradlew assembleRelease \
+            -PANDROID_NDK_HOME=$ANDROID_NDK_ROOT \
+            --stacktrace 2>&1
+
+    # ── الملفات الناتجة ────────────────────────────────────────────
+    artifacts:
+      - app/build/outputs/apk/debug/*.apk
+      - app/build/outputs/apk/release/*.apk
+      - app/build/outputs/mapping/release/mapping.txt
+```
+
+---
+
+## ✅ ملخص كل ما تحتاج رفعه على GitHub
+```
+LREC-Operator-main/
+│
+├── codemagic.yaml                          ← جديد (في الجذر)
+│
+└── app/
+    ├── build.gradle                        ← استبدال
+    │
+    └── src/
+        └── main/
+            ├── AndroidManifest.xml         ← استبدال
+            │
+            ├── cpp/                        ← مجلد جديد أنشئه
+            │   ├── CMakeLists.txt          ← جديد
+            │   └── lrec_engine.cpp         ← جديد
+            │
+            ├── java/com/lrec/operator/
+            │   ├── LrecEngine.kt           ← جديد
+            │   ├── LrecPlayerActivity.kt   ← استبدال
+            │   └── (باقي الملفات بدون تغيير)
+            │
+            └── res/
+                └── layout/                 ← مجلد جديد أنشئه
+                    └── activity_lrec_player.xml  ← جديد
