@@ -1,67 +1,77 @@
 package com.lrec.operator
 
 import android.graphics.Bitmap
-import android.graphics.Bitmap.Config
 import android.net.Uri
-import android.os.*
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.WindowManager
-import android.widget.*
+import android.widget.ImageButton
+import android.widget.ImageView
+import android.widget.SeekBar
+import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import java.io.File
 import java.io.FileOutputStream
+import java.nio.ShortBuffer
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 class LrecPlayerActivity : AppCompatActivity() {
 
-    private lateinit var imageViewScreen: ImageView
+    private lateinit var screenView: ImageView
     private lateinit var seekBar: SeekBar
-    private lateinit var btnPlay: ImageButton
-    private lateinit var btnPause: ImageButton
-    private lateinit var btnStop: ImageButton
-
-    private lateinit var tvCurrentTime: TextView
-    private lateinit var tvTotalTime: TextView
+    private lateinit var playBtn: ImageButton
+    private lateinit var pauseBtn: ImageButton
+    private lateinit var stopBtn: ImageButton
+    private lateinit var timeCurrent: TextView
+    private lateinit var timeTotal: TextView
 
     private var engineHandle: Long = 0
-    private var totalFrames = 0
-    private var screenWidth = 0
-    private var screenHeight = 0
-    private var durationMs: Long = 0
 
-    // تغيير نوع البكسل لتقليل الذاكرة
-    private var screenBitmap: Bitmap? = null
+    private var width = 0
+    private var height = 0
+    private var totalFrames = 0
+
+    private var bitmap: Bitmap? = null
     private var pixelBuffer: ShortArray? = null
 
     private val isPlaying = AtomicBoolean(false)
-    private val currentFrame = AtomicInteger(0)
+    private val frameIndex = AtomicInteger(0)
 
     private val uiHandler = Handler(Looper.getMainLooper())
 
     private var decodeThread: Thread? = null
 
-    companion object {
-        private const val SEEK_BAR_MAX = 1000
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
+
         super.onCreate(savedInstanceState)
 
         setContentView(R.layout.activity_lrec_player)
 
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
-        imageViewScreen = findViewById(R.id.imageScreen)
+        screenView = findViewById(R.id.imageScreen)
         seekBar = findViewById(R.id.seekBar)
-
-        btnPlay = findViewById(R.id.btnPlay)
-        btnPause = findViewById(R.id.btnPause)
-        btnStop = findViewById(R.id.btnStop)
-
-        tvCurrentTime = findViewById(R.id.tvCurrentTime)
-        tvTotalTime = findViewById(R.id.tvTotalTime)
+        playBtn = findViewById(R.id.btnPlay)
+        pauseBtn = findViewById(R.id.btnPause)
+        stopBtn = findViewById(R.id.btnStop)
+        timeCurrent = findViewById(R.id.tvCurrentTime)
+        timeTotal = findViewById(R.id.tvTotalTime)
 
         loadFile()
+
+        playBtn.setOnClickListener {
+            startPlayback()
+        }
+
+        pauseBtn.setOnClickListener {
+            pausePlayback()
+        }
+
+        stopBtn.setOnClickListener {
+            stopPlayback()
+        }
     }
 
     private fun loadFile() {
@@ -70,32 +80,32 @@ class LrecPlayerActivity : AppCompatActivity() {
 
         Thread {
 
-            val path = copyToCache(uri)
+            val filePath = copyToCache(uri)
 
-            engineHandle = LrecEngine.open(path)
+            engineHandle = LrecEngine.open(filePath)
 
+            width = LrecEngine.getWidth(engineHandle)
+            height = LrecEngine.getHeight(engineHandle)
             totalFrames = LrecEngine.getTotalFrames(engineHandle)
-            screenWidth = LrecEngine.getWidth(engineHandle)
-            screenHeight = LrecEngine.getHeight(engineHandle)
-            durationMs = LrecEngine.getDuration(engineHandle)
 
-            pixelBuffer = ShortArray(screenWidth * screenHeight)
+            pixelBuffer = ShortArray(width * height)
 
-            screenBitmap = Bitmap.createBitmap(
-                screenWidth,
-                screenHeight,
-                Config.RGB_565
+            bitmap = Bitmap.createBitmap(
+                width,
+                height,
+                Bitmap.Config.RGB_565
             )
 
             runOnUiThread {
-                imageViewScreen.setImageBitmap(screenBitmap)
-                startDecoder()
+                screenView.setImageBitmap(bitmap)
             }
 
         }.start()
     }
 
-    private fun startDecoder() {
+    private fun startPlayback() {
+
+        if (isPlaying.get()) return
 
         isPlaying.set(true)
 
@@ -103,7 +113,7 @@ class LrecPlayerActivity : AppCompatActivity() {
 
             while (isPlaying.get()) {
 
-                val frame = currentFrame.get()
+                val frame = frameIndex.get()
 
                 if (frame >= totalFrames) {
                     isPlaying.set(false)
@@ -116,22 +126,40 @@ class LrecPlayerActivity : AppCompatActivity() {
                     pixelBuffer
                 )
 
-                screenBitmap?.copyPixelsFromBuffer(
-                    java.nio.ShortBuffer.wrap(pixelBuffer)
+                bitmap?.copyPixelsFromBuffer(
+                    ShortBuffer.wrap(pixelBuffer)
                 )
 
                 uiHandler.post {
-                    imageViewScreen.invalidate()
+                    screenView.invalidate()
                 }
 
-                currentFrame.incrementAndGet()
+                frameIndex.incrementAndGet()
 
-                Thread.sleep(33)
+                try {
+                    Thread.sleep(16)
+                } catch (_: Exception) {
+                }
+
             }
 
         }
 
-        decodeThread!!.start()
+        decodeThread?.start()
+    }
+
+    private fun pausePlayback() {
+
+        isPlaying.set(false)
+
+    }
+
+    private fun stopPlayback() {
+
+        isPlaying.set(false)
+
+        frameIndex.set(0)
+
     }
 
     private fun copyToCache(uri: Uri): String {
@@ -145,8 +173,11 @@ class LrecPlayerActivity : AppCompatActivity() {
                 val buffer = ByteArray(65536)
 
                 while (true) {
+
                     val read = input.read(buffer)
+
                     if (read <= 0) break
+
                     output.write(buffer, 0, read)
                 }
 
