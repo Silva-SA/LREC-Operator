@@ -2,6 +2,7 @@ package com.lrec.operator
 
 import android.app.ActivityManager
 import android.graphics.Bitmap
+import android.graphics.Bitmap.Config
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -9,13 +10,10 @@ import android.os.Looper
 import android.view.WindowManager
 import android.widget.ImageButton
 import android.widget.ImageView
-import android.widget.SeekBar
-import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import java.io.File
 import java.io.FileOutputStream
-import java.nio.ShortBuffer
-import java.util.concurrent.LinkedBlockingQueue
+import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -26,12 +24,9 @@ class LrecPlayerActivity : AppCompatActivity() {
     private var glSurface: LrecGLSurface? = null
     private var cpuImageView: ImageView? = null
 
-    private lateinit var seekBar: SeekBar
     private lateinit var playBtn: ImageButton
     private lateinit var pauseBtn: ImageButton
     private lateinit var stopBtn: ImageButton
-    private lateinit var timeCurrent: TextView
-    private lateinit var timeTotal: TextView
 
     private var engineHandle: Long = 0
 
@@ -40,17 +35,13 @@ class LrecPlayerActivity : AppCompatActivity() {
     private var totalFrames = 0
 
     private var bitmap: Bitmap? = null
-    private var pixelBuffer: ShortArray? = null
 
-    private val isPlaying = AtomicBoolean(false)
     private val frameIndex = AtomicInteger(0)
+    private val isPlaying = AtomicBoolean(false)
 
     private val uiHandler = Handler(Looper.getMainLooper())
 
     private var decodeThread: Thread? = null
-    private var renderThread: Thread? = null
-
-    private val frameQueue = LinkedBlockingQueue<Bitmap>(3)
 
     override fun onCreate(savedInstanceState: Bundle?) {
 
@@ -68,17 +59,14 @@ class LrecPlayerActivity : AppCompatActivity() {
             cpuImageView = findViewById(R.id.imageScreen)
         }
 
-        seekBar = findViewById(R.id.seekBar)
         playBtn = findViewById(R.id.btnPlay)
         pauseBtn = findViewById(R.id.btnPause)
         stopBtn = findViewById(R.id.btnStop)
-        timeCurrent = findViewById(R.id.tvCurrentTime)
-        timeTotal = findViewById(R.id.tvTotalTime)
 
         loadFile()
 
         playBtn.setOnClickListener { startPlayback() }
-        pauseBtn.setOnClickListener { pausePlayback() }
+        pauseBtn.setOnClickListener { stopPlayback() }
         stopBtn.setOnClickListener { stopPlayback() }
     }
 
@@ -104,21 +92,11 @@ class LrecPlayerActivity : AppCompatActivity() {
             height = LrecEngine.getHeight(engineHandle)
             totalFrames = LrecEngine.getTotalFrames(engineHandle)
 
-            pixelBuffer = ShortArray(width * height)
-
             bitmap = Bitmap.createBitmap(
                 width,
                 height,
-                Bitmap.Config.RGB_565
+                Config.RGB_565
             )
-
-            runOnUiThread {
-
-                if (!useGpu) {
-                    cpuImageView?.setImageBitmap(bitmap)
-                }
-
-            }
 
         }.start()
     }
@@ -128,12 +106,6 @@ class LrecPlayerActivity : AppCompatActivity() {
         if (isPlaying.get()) return
 
         isPlaying.set(true)
-
-        startDecoder()
-        startRenderer()
-    }
-
-    private fun startDecoder() {
 
         decodeThread = Thread {
 
@@ -146,23 +118,28 @@ class LrecPlayerActivity : AppCompatActivity() {
                     break
                 }
 
-                LrecEngine.decodeFrame565(
+                val frameData = LrecEngine.decodeFrameNative(
                     engineHandle,
-                    frame,
-                    pixelBuffer
+                    frame
                 )
 
-                val frameBitmap = bitmap?.copy(Bitmap.Config.RGB_565, true)
+                val buffer = ByteBuffer.wrap(frameData)
 
-                frameBitmap?.copyPixelsFromBuffer(
-                    ShortBuffer.wrap(pixelBuffer)
-                )
+                bitmap?.copyPixelsFromBuffer(buffer)
 
-                if (frameQueue.remainingCapacity() > 0) {
-                    frameQueue.offer(frameBitmap)
+                uiHandler.post {
+
+                    if (useGpu) {
+                        glSurface?.updateFrame(bitmap!!)
+                    } else {
+                        cpuImageView?.setImageBitmap(bitmap)
+                    }
+
                 }
 
                 frameIndex.incrementAndGet()
+
+                Thread.sleep(16)
             }
 
         }
@@ -170,49 +147,11 @@ class LrecPlayerActivity : AppCompatActivity() {
         decodeThread?.start()
     }
 
-    private fun startRenderer() {
-
-        renderThread = Thread {
-
-            while (isPlaying.get()) {
-
-                val frameBitmap = frameQueue.take()
-
-                uiHandler.post {
-
-                    if (useGpu) {
-                        glSurface?.updateFrame(frameBitmap)
-                    } else {
-                        cpuImageView?.setImageBitmap(frameBitmap)
-                    }
-
-                }
-
-                try {
-                    Thread.sleep(16)
-                } catch (_: Exception) {
-                }
-
-            }
-
-        }
-
-        renderThread?.start()
-    }
-
-    private fun pausePlayback() {
-
-        isPlaying.set(false)
-
-    }
-
     private fun stopPlayback() {
 
         isPlaying.set(false)
 
         frameIndex.set(0)
-
-        frameQueue.clear()
     }
 
     private fun copyToCache(uri: Uri): String {
@@ -246,7 +185,6 @@ class LrecPlayerActivity : AppCompatActivity() {
         isPlaying.set(false)
 
         decodeThread?.interrupt()
-        renderThread?.interrupt()
 
         if (engineHandle != 0L) {
             LrecEngine.close(engineHandle)
