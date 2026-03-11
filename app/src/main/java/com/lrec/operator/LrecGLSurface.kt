@@ -24,7 +24,7 @@ class LrecGLSurface(context: Context) : GLSurfaceView(context) {
 
     fun updateFrame(bitmap: Bitmap) {
 
-        renderer.updateBitmap(bitmap)
+        renderer.setBitmap(bitmap)
 
         requestRender()
     }
@@ -32,29 +32,20 @@ class LrecGLSurface(context: Context) : GLSurfaceView(context) {
     private class LrecRenderer : Renderer {
 
         private var bitmap: Bitmap? = null
-        private var textureId = IntArray(1)
+        private val texture = IntArray(1)
 
-        fun updateBitmap(bmp: Bitmap) {
+        fun setBitmap(bmp: Bitmap) {
             bitmap = bmp
         }
 
         override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
 
-            gl?.glGenTextures(1, textureId, 0)
+            gl?.glGenTextures(1, texture, 0)
 
-            gl?.glBindTexture(GL10.GL_TEXTURE_2D, textureId[0])
+            gl?.glBindTexture(GL10.GL_TEXTURE_2D, texture[0])
 
-            gl?.glTexParameterf(
-                GL10.GL_TEXTURE_2D,
-                GL10.GL_TEXTURE_MIN_FILTER,
-                GL10.GL_LINEAR.toFloat()
-            )
-
-            gl?.glTexParameterf(
-                GL10.GL_TEXTURE_2D,
-                GL10.GL_TEXTURE_MAG_FILTER,
-                GL10.GL_LINEAR.toFloat()
-            )
+            gl?.glTexParameterf(GL10.GL_TEXTURE_2D, GL10.GL_TEXTURE_MIN_FILTER, GL10.GL_LINEAR.toFloat())
+            gl?.glTexParameterf(GL10.GL_TEXTURE_2D, GL10.GL_TEXTURE_MAG_FILTER, GL10.GL_LINEAR.toFloat())
         }
 
         override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
