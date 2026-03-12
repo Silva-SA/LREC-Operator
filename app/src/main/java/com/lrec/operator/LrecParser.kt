@@ -2,74 +2,26 @@ package com.lrec.operator
 
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.util.Base64
+import android.util.Log
 import java.io.File
 import java.io.RandomAccessFile
 import java.util.zip.DataFormatException
 import java.util.zip.Inflater
 
-/**
- * ══════════════════════════════════════════════════════════════════════
- *  LrecParser — محلّل ملفات .lrec  (النسخة المُحقَّقة بالتحليل الكامل)
- *
- *  الصيغة: Inter-Tel Collaboration Client 2.0 (Build 4.2.7.0)
- *  © 2007 Linktivity / Inter-Tel Delaware Inc.
- *
- *  ──────────────────────────────────────────────────────────────────────
- *  بنية الملف:
- *    8 bytes رأس (أصفار)
- *    كتل متكررة:
- *      marker[0]=0x10, marker[1]=0x04
- *      length: LE U16 (2 bytes)
- *      data[length]
- *
- *  أنواع الكتل (byte[1] من data):
- *    0x08 = رأس الملف / Metadata الرئيسي
- *    0x03 = بيانات الشاشة  ← النوع الرئيسي
- *    0x02 = حزم TCP مشفرة (صوت + شبكة — مشفر بـ CastEncrypt)
- *    0x01 = Keyboard Chat (مشفر بـ CastEncrypt)
- *
- *  التفاصيل الدقيقة لكتل 0x03:
- *    إذا لم تحتوِ zlib (bd[12] != 0x78):
- *      إذا len == 44   → Metadata (أبعاد الشاشة)
- *      إذا len == 1036 → PALETTE (256 لون RGBQUAD بدءاً من bd[12])
- *    إذا احتوت zlib (bd[12] == 0x78):
- *      إذا bd[6] == 0x02 → Full Frame (الشاشة كاملة)
- *      إذا bd[6] == 0x01 → Delta Frame (تحديث جزئي)
- *
- *  بنية Full Frame (بعد فك zlib):
- *    [0:9]   = أصفار
- *    [9:11]  = Width  (LE U16) — ملاحظة: offset فردي!
- *    [11:13] = أصفار
- *    [13:15] = Height (LE U16) — ملاحظة: offset فردي!
- *    [15:21] = header إضافي
- *    [21 : 21+W*H] = pixel indices (8-bit، indexed في colorPalette)
- *
- *  بنية Delta Frame (بعد فك zlib):
- *    [0:4]   = x * 256  (LE U32)
- *    [4:8]   = y * 256  (LE U32)
- *    [8:12]  = w * 256  (LE U32)
- *    [12:16] = h * 256  (LE U32)
- *    [16:20] = n * 256  (LE U32) حيث n = w * h
- *    [20]    = zero padding
- *    [21 : 21+w*h] = pixel indices (8-bit)
- *
- *  الأبعاد الحقيقية لهذا الملف: 1187 × 834 pixels
- *  الصوت والمحادثة: مشفران بـ CastEncrypt — لا يمكن فكهما
- * ══════════════════════════════════════════════════════════════════════
- */
 class LrecParser(private val file: File) {
 
     companion object {
+        private const val TAG = "LrecParser"
+
         const val BLOCK_MARKER_0 = 0x10
         const val BLOCK_MARKER_1 = 0x04
 
-        // أنواع الكتل الخارجية (byte[1])
-        const val TYPE_VIEWPORT = 0x03
-        const val TYPE_NETWORK  = 0x02
-        const val TYPE_CHAT_RAW = 0x01
-        const val TYPE_HEADER   = 0x08
+        const val TYPE_VIEWPORT  = 0x03
+        const val TYPE_NETWORK   = 0x02
+        const val TYPE_CHAT_RAW  = 0x01
+        const val TYPE_HEADER    = 0x08
 
-        // أنواع داخلية للـ parser
         const val SUBTYPE_METADATA  = 0
         const val SUBTYPE_PALETTE   = 1
         const val SUBTYPE_FULLFRAME = 2
@@ -78,22 +30,16 @@ class LrecParser(private val file: File) {
         const val DEFAULT_FPS   = 5
         const val MS_PER_FRAME  = 1000L / DEFAULT_FPS
 
-        // الأبعاد الحقيقية للشاشة (مُكتشَفة من التحليل العكسي الكامل)
         const val REAL_SCREEN_WIDTH  = 1187
         const val REAL_SCREEN_HEIGHT = 834
 
         const val LINKTIVITY_SIG = "Linktivity"
 
-        // ──────────────────────────────────────────
-        // offsets ثابتة لفك تشفير الإطارات
-        // ──────────────────────────────────────────
-        private const val ZLIB_OFFSET        = 12   // zlib يبدأ عند byte[12] في data
-        private const val FULL_WIDTH_OFFSET  = 9    // Width  عند decompressed[9]  (LE U16)
-        private const val FULL_HEIGHT_OFFSET = 13   // Height عند decompressed[13] (LE U16)
-        private const val PIXEL_DATA_OFFSET  = 21   // بيانات البكسل تبدأ عند decompressed[21]
+        private const val ZLIB_OFFSET        = 12
+        private const val FULL_WIDTH_OFFSET  = 9
+        private const val FULL_HEIGHT_OFFSET = 13
+        private const val PIXEL_DATA_OFFSET  = 21
     }
-
-    // ── نماذج البيانات ────────────────────────────────────────────────
 
     data class LrecMetadata(
         val sessionId:    String  = "",
@@ -107,10 +53,10 @@ class LrecParser(private val file: File) {
 
     data class LrecFrame(
         val fileOffset: Long,
-        val type:       Int,       // SUBTYPE_FULLFRAME أو SUBTYPE_DELTA
+        val type:       Int,
         val dataLength: Int,
-        val timestamp:  Long,      // ميلي-ثانية من بداية التسجيل
-        val rawData:    ByteArray  // البيانات الخام للكتلة (لم تُفك ضغطها بعد)
+        val timestamp:  Long,
+        val rawData:    ByteArray
     )
 
     data class ScreenFrameData(
@@ -118,18 +64,31 @@ class LrecParser(private val file: File) {
         val y:           Int,
         val width:       Int,
         val height:      Int,
-        val pixels:      IntArray, // ARGB لكل بكسل
+        val pixels:      IntArray,
         val isFullFrame: Boolean
     )
 
-    // ── الحالة الداخلية ──────────────────────────────────────────────
+    data class ChatEntry(
+        val timestampMs: Long,
+        val sender:      String,
+        val message:     String,
+        val isDecoded:   Boolean = true
+    ) {
+        val formattedTime: String get() {
+            val sec = timestampMs / 1000
+            val m   = (sec % 3600) / 60
+            val s   = sec % 60
+            return String.format("%02d:%02d", m, s)
+        }
+    }
+
     var metadata = LrecMetadata()
         private set
 
-    private val _frames     = mutableListOf<LrecFrame>()
-    private var _durationMs = 0L
+    private val _frames      = mutableListOf<LrecFrame>()
+    private val _chatEntries = mutableListOf<ChatEntry>()
+    private var _durationMs  = 0L
 
-    // ── ✅ عدّادات الكتل المشفّرة (صوت + شات) ──────────────────────
     var audioBlockCount: Int = 0
         private set
 
@@ -138,15 +97,13 @@ class LrecParser(private val file: File) {
 
     val hasAudioBlocks: Boolean get() = audioBlockCount > 0
     val hasChatBlocks:  Boolean get() = chatBlockCount  > 0
+    val hasChatContent: Boolean get() = _chatEntries.isNotEmpty()
 
-    // لوحة الألوان (256 لون - ARGB)
-    // مُهيَّأة بالرمادي الافتراضي حتى نقرأ اللوحة الحقيقية
-    private val colorPalette = IntArray(256) { i -> Color.rgb(i, i, i) }
+    private val colorPalette  = IntArray(256) { i -> Color.rgb(i, i, i) }
     private var paletteLoaded = false
 
-    // ══════════════════════════════════════════════════════════════════
-    //  الدالة الرئيسية — تحليل الملف كاملاً
-    // ══════════════════════════════════════════════════════════════════
+    private val decompressBuffer = ByteArray(1_500_000)
+
     fun parse(): Boolean {
         if (!file.exists() || file.length() < 64) return false
         return try {
@@ -158,11 +115,11 @@ class LrecParser(private val file: File) {
                 metadata.isValid && _frames.isNotEmpty()
             }
         } catch (e: Exception) {
+            Log.e(TAG, "خطأ في التحليل", e)
             false
         }
     }
 
-    // ── قراءة رأس الملف (أول 2048 byte) ─────────────────────────────
     private fun parseHeader(raf: RandomAccessFile) {
         raf.seek(0)
         val scanSize = 2048.coerceAtMost(file.length().toInt())
@@ -187,7 +144,6 @@ class LrecParser(private val file: File) {
         )
     }
 
-    // ── مسح جميع الكتل ───────────────────────────────────────────────
     private fun scanAllFrames(raf: RandomAccessFile) {
         var pos      = 8L
         var tsMs     = 0L
@@ -215,30 +171,27 @@ class LrecParser(private val file: File) {
                             TYPE_VIEWPORT -> {
                                 val subtype = classifyViewportBlock(blockData)
                                 when (subtype) {
-                                    SUBTYPE_PALETTE -> {
-                                        extractPalette(blockData)
-                                    }
+                                    SUBTYPE_PALETTE -> extractPalette(blockData)
                                     SUBTYPE_FULLFRAME, SUBTYPE_DELTA -> {
-                                        _frames.add(
-                                            LrecFrame(
-                                                fileOffset = pos,
-                                                type       = subtype,
-                                                dataLength = dataLen,
-                                                timestamp  = tsMs,
-                                                rawData    = blockData
-                                            )
-                                        )
+                                        _frames.add(LrecFrame(
+                                            fileOffset = pos,
+                                            type       = subtype,
+                                            dataLength = dataLen,
+                                            timestamp  = tsMs,
+                                            rawData    = blockData
+                                        ))
                                         tsMs += MS_PER_FRAME
                                     }
                                 }
                             }
-                            // ✅ عدّ كتل الصوت المشفّرة
                             TYPE_NETWORK -> {
                                 audioBlockCount++
                             }
-                            // ✅ عدّ كتل الشات المشفّرة
                             TYPE_CHAT_RAW -> {
                                 chatBlockCount++
+                                extractChatEntry(blockData, tsMs)?.let {
+                                    _chatEntries.add(it)
+                                }
                             }
                         }
                     }
@@ -252,12 +205,71 @@ class LrecParser(private val file: File) {
         }
     }
 
-    /**
-     * تصنيف كتلة TYPE_VIEWPORT:
-     *   - لا zlib + طول صغير  -> metadata أو palette
-     *   - zlib + bd[6]=0x02   -> full frame
-     *   - zlib + bd[6]=0x01   -> delta frame
-     */
+    private fun extractChatEntry(blockData: ByteArray, timestampMs: Long): ChatEntry? {
+        if (blockData.size < 10) return null
+
+        try {
+            val startOffset = 8.coerceAtMost(blockData.size - 1)
+            val rawStr = String(blockData, startOffset, blockData.size - startOffset,
+                                Charsets.ISO_8859_1)
+            val base64Regex = Regex("[A-Za-z0-9+/]{20,}={0,2}")
+            val match = base64Regex.find(rawStr)
+            if (match != null) {
+                val decoded = Base64.decode(match.value, Base64.DEFAULT)
+                val text = String(decoded, Charsets.UTF_8).trim()
+                if (isValidChatText(text)) {
+                    val parts = parseChatText(text)
+                    return ChatEntry(timestampMs, parts.first, parts.second, true)
+                }
+            }
+        } catch (e: Exception) { }
+
+        try {
+            val startOffset = 8.coerceAtMost(blockData.size - 1)
+            val text = String(blockData, startOffset, blockData.size - startOffset,
+                              Charsets.UTF_8).trim()
+            if (isValidChatText(text)) {
+                val parts = parseChatText(text)
+                return ChatEntry(timestampMs, parts.first, parts.second, true)
+            }
+        } catch (e: Exception) { }
+
+        try {
+            val readable = blockData.drop(8).map { b ->
+                val c = b.toInt() and 0xFF
+                if (c in 32..126) c.toChar() else ' '
+            }.joinToString("").trim().replace(Regex("\\s{2,}"), " ")
+
+            if (readable.length >= 5 && readable.count { it.isLetterOrDigit() } >= 4) {
+                return ChatEntry(timestampMs, "مشارك", readable, true)
+            }
+        } catch (e: Exception) { }
+
+        return null
+    }
+
+    private fun isValidChatText(text: String): Boolean {
+        if (text.length < 2 || text.length > 2000) return false
+        val validChars = text.count { c ->
+            c.isLetterOrDigit() || c.isWhitespace() || c in ".,!?؟،:-()[]{}@#"
+        }
+        return validChars.toFloat() / text.length > 0.6f
+    }
+
+    private fun parseChatText(text: String): Pair<String, String> {
+        val colonIdx = text.indexOf(':')
+        return if (colonIdx in 1..30) {
+            val sender  = text.substring(0, colonIdx).trim()
+            val message = text.substring(colonIdx + 1).trim()
+            if (sender.isNotBlank() && message.isNotBlank())
+                Pair(sender, message)
+            else
+                Pair("مشارك", text)
+        } else {
+            Pair("مشارك", text)
+        }
+    }
+
     private fun classifyViewportBlock(blockData: ByteArray): Int {
         if (blockData.size < 13) return SUBTYPE_METADATA
 
@@ -277,7 +289,6 @@ class LrecParser(private val file: File) {
         }
     }
 
-    // ── استخراج لوحة الألوان من كتلة PALETTE ────────────────────────
     private fun extractPalette(blockData: ByteArray) {
         if (blockData.size < 12 + 1024) return
         val start = 12
@@ -290,9 +301,6 @@ class LrecParser(private val file: File) {
         paletteLoaded = true
     }
 
-    // ══════════════════════════════════════════════════════════════════
-    //  فك ضغط كتلة بـ zlib (مع دعم incomplete streams)
-    // ══════════════════════════════════════════════════════════════════
     private fun zlibDecompress(blockData: ByteArray): ByteArray? {
         if (blockData.size <= ZLIB_OFFSET + 2) return null
         val b12 = blockData[ZLIB_OFFSET].toInt() and 0xFF
@@ -303,30 +311,32 @@ class LrecParser(private val file: File) {
         val inflater = Inflater()
         inflater.setInput(blockData, ZLIB_OFFSET, blockData.size - ZLIB_OFFSET)
 
-        val buf = ByteArray(1_200_000)
         return try {
             var total = 0
-            while (!inflater.finished() && !inflater.needsInput() && total < buf.size) {
-                val n = inflater.inflate(buf, total, buf.size - total)
+            while (!inflater.finished() && !inflater.needsInput()
+                   && total < decompressBuffer.size) {
+                val n = inflater.inflate(decompressBuffer, total,
+                                        decompressBuffer.size - total)
                 if (n <= 0) break
                 total += n
             }
             inflater.end()
-            if (total > 0) buf.copyOf(total) else null
+            if (total > 0) decompressBuffer.copyOf(total) else null
         } catch (e: DataFormatException) {
             inflater.end()
-            // حاول raw deflate كبديل
             val inf2 = Inflater(true)
             inf2.setInput(blockData, ZLIB_OFFSET + 2, blockData.size - ZLIB_OFFSET - 2)
             try {
                 var total = 0
-                while (!inf2.finished() && !inf2.needsInput() && total < buf.size) {
-                    val n = inf2.inflate(buf, total, buf.size - total)
+                while (!inf2.finished() && !inf2.needsInput()
+                       && total < decompressBuffer.size) {
+                    val n = inf2.inflate(decompressBuffer, total,
+                                        decompressBuffer.size - total)
                     if (n <= 0) break
                     total += n
                 }
                 inf2.end()
-                if (total > 0) buf.copyOf(total) else null
+                if (total > 0) decompressBuffer.copyOf(total) else null
             } catch (e2: Exception) {
                 inf2.end()
                 null
@@ -337,28 +347,21 @@ class LrecParser(private val file: File) {
         }
     }
 
-    // ══════════════════════════════════════════════════════════════════
-    //  فك تشفير إطار شاشة -> بيانات بكسل ARGB
-    // ══════════════════════════════════════════════════════════════════
     fun decodeScreenFrame(frame: LrecFrame): ScreenFrameData? {
         val decompressed = zlibDecompress(frame.rawData) ?: return null
         if (decompressed.size <= PIXEL_DATA_OFFSET) return null
-
         return try {
             when (frame.type) {
                 SUBTYPE_FULLFRAME -> decodeFullFrame(decompressed)
                 SUBTYPE_DELTA     -> decodeDeltaFrame(decompressed)
                 else              -> null
             }
-        } catch (e: Exception) { null }
+        } catch (e: Exception) {
+            Log.w(TAG, "خطأ في فك تشفير الإطار: ${e.message}")
+            null
+        }
     }
 
-    /**
-     * فك تشفير الإطار الكامل:
-     *   - decompressed[9:11]  = Width  (LE U16)
-     *   - decompressed[13:15] = Height (LE U16)
-     *   - decompressed[21:]   = pixel indices (8-bit)
-     */
     private fun decodeFullFrame(raw: ByteArray): ScreenFrameData? {
         if (raw.size < PIXEL_DATA_OFFSET + 100) return null
 
@@ -378,27 +381,9 @@ class LrecParser(private val file: File) {
             pixels[i] = colorPalette[idx]
         }
 
-        return ScreenFrameData(
-            x           = 0,
-            y           = 0,
-            width       = w,
-            height      = h,
-            pixels      = pixels,
-            isFullFrame = true
-        )
+        return ScreenFrameData(0, 0, w, h, pixels, true)
     }
 
-    /**
-     * فك تشفير الإطار الجزئي (delta):
-     *   Header = 5 x U32LE، كل قيمة = القيمة الحقيقية * 256
-     *   [0:4]  = x * 256
-     *   [4:8]  = y * 256
-     *   [8:12] = w * 256
-     *   [12:16]= h * 256
-     *   [16:20]= n * 256  (n = w * h)
-     *   [20]   = zero padding
-     *   [21:]  = pixel indices
-     */
     private fun decodeDeltaFrame(raw: ByteArray): ScreenFrameData? {
         if (raw.size < PIXEL_DATA_OFFSET + 1) return null
 
@@ -419,25 +404,13 @@ class LrecParser(private val file: File) {
             pixels[i] = colorPalette[idx]
         }
 
-        return ScreenFrameData(
-            x           = x,
-            y           = y,
-            width       = w,
-            height      = h,
-            pixels      = pixels,
-            isFullFrame = false
-        )
+        return ScreenFrameData(x, y, w, h, pixels, false)
     }
 
-    // ══════════════════════════════════════════════════════════════════
-    //  تطبيق إطار على Bitmap الحالي
-    // ══════════════════════════════════════════════════════════════════
     fun applyFrameToBitmap(bitmap: Bitmap, frameData: ScreenFrameData) {
         if (frameData.isFullFrame) {
             bitmap.setPixels(
-                frameData.pixels,
-                0, frameData.width,
-                0, 0,
+                frameData.pixels, 0, frameData.width, 0, 0,
                 frameData.width.coerceAtMost(bitmap.width),
                 frameData.height.coerceAtMost(bitmap.height)
             )
@@ -448,25 +421,27 @@ class LrecParser(private val file: File) {
             val safeH = frameData.height.coerceAtMost(bitmap.height - safeY)
             if (safeW > 0 && safeH > 0 && frameData.pixels.size >= safeW * safeH) {
                 bitmap.setPixels(
-                    frameData.pixels,
-                    0, frameData.width,
-                    safeX, safeY,
-                    safeW, safeH
+                    frameData.pixels, 0, frameData.width,
+                    safeX, safeY, safeW, safeH
                 )
             }
         }
     }
 
-    // ══════════════════════════════════════════════════════════════════
-    //  واجهة استرجاع البيانات
-    // ══════════════════════════════════════════════════════════════════
-    fun getAllFrames()    : List<LrecFrame> = _frames.toList()
+    fun getAllFrames()    : List<LrecFrame>  = _frames.toList()
     fun getScreenFrames(): List<LrecFrame>  = _frames.toList()
-    fun getAudioFrames() : List<LrecFrame>  = emptyList()  // مشفّر — غير مدعوم
-    fun getChatFrames()  : List<LrecFrame>  = emptyList()  // مشفّر — غير مدعوم
+    fun getAudioFrames() : List<LrecFrame>  = emptyList()
+    fun getChatFrames()  : List<LrecFrame>  = emptyList()
     fun getDurationMs()  : Long             = _durationMs
     fun getTotalFrames() : Int              = _frames.size
     fun isPaletteLoaded(): Boolean          = paletteLoaded
+    fun getChatEntries() : List<ChatEntry>  = _chatEntries.toList()
+
+    fun getChatEntriesUpTo(timeMs: Long): List<ChatEntry> =
+        _chatEntries.filter { it.timestampMs <= timeMs }
+
+    fun getActiveChatEntry(timeMs: Long): ChatEntry? =
+        _chatEntries.lastOrNull { it.timestampMs <= timeMs }
 
     fun getFrameAtTime(timeMs: Long): LrecFrame? =
         _frames.minByOrNull { kotlin.math.abs(it.timestamp - timeMs) }
@@ -474,10 +449,8 @@ class LrecParser(private val file: File) {
     fun getFramesBetween(startMs: Long, endMs: Long): List<LrecFrame> =
         _frames.filter { it.timestamp in startMs..endMs }
 
-    // للتوافق مع الكود القديم
     fun decodeChatFrame(frame: LrecFrame): String? = null
 
-    // ── مساعدات ──────────────────────────────────────────────────────
     private fun readU16LE(data: ByteArray, offset: Int): Int {
         if (offset + 1 >= data.size) return 0
         return (data[offset].toInt() and 0xFF) or
@@ -486,10 +459,10 @@ class LrecParser(private val file: File) {
 
     private fun readU32LE(data: ByteArray, offset: Int): Long {
         if (offset + 3 >= data.size) return 0L
-        return  (data[offset].toLong()     and 0xFF) or
-               ((data[offset+1].toLong()   and 0xFF) shl  8) or
-               ((data[offset+2].toLong()   and 0xFF) shl 16) or
-               ((data[offset+3].toLong()   and 0xFF) shl 24)
+        return  (data[offset].toLong()   and 0xFF) or
+               ((data[offset+1].toLong() and 0xFF) shl  8) or
+               ((data[offset+2].toLong() and 0xFF) shl 16) or
+               ((data[offset+3].toLong() and 0xFF) shl 24)
     }
 
     private fun extractNullStrings(buf: ByteArray, start: Int, maxLen: Int): List<String> {
