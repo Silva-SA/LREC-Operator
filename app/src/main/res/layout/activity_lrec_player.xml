@@ -1,78 +1,55 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-    ════════════════════════════════════════════════════════════
-     activity_lrec_player.xml — واجهة مشغّل ملفات .lrec
-     مع: زر تشغيل/إيقاف + ترجيع + تقديم + شريط تقدم + وقت
-    ════════════════════════════════════════════════════════════
--->
 <FrameLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@android:color/black">
+    android:background="#000000">
 
-    <!-- ══ منطقة عرض الفيديو (الإطارات كـ Bitmap) ══════════════ -->
+    <!-- 1. عارض الفيديو -->
     <ImageView
         android:id="@+id/lrecImageView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:scaleType="fitCenter"
-        android:background="@android:color/black"
-        android:contentDescription="شاشة الفيديو" />
+        android:adjustViewBounds="true"
+        android:background="#000000" />
 
-    <!-- ══ مؤشر التحميل ══════════════════════════════════════════ -->
-    <ProgressBar
-        android:id="@+id/lrecProgressBar"
-        style="?android:attr/progressBarStyleLarge"
-        android:layout_width="56dp"
-        android:layout_height="56dp"
-        android:layout_gravity="center"
-        android:indeterminate="true"
-        android:visibility="gone" />
-
-    <!-- ══ نص الحالة (عدد الإطارات / خطأ) ══════════════════════ -->
-    <TextView
-        android:id="@+id/lrecTvStatus"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="center_horizontal|bottom"
-        android:layout_marginBottom="170dp"
-        android:textColor="#CCFFFFFF"
-        android:textSize="13sp"
-        android:background="#88000000"
-        android:paddingStart="12dp"
-        android:paddingEnd="12dp"
-        android:paddingTop="4dp"
-        android:paddingBottom="4dp"
-        android:visibility="gone" />
-
-    <!-- ══ تدرج علوي (يجعل النص مقروءاً على الفيديو) ═══════════ -->
+    <!-- 2. تدرج علوي -->
     <View
         android:layout_width="match_parent"
-        android:layout_height="90dp"
+        android:layout_height="100dp"
+        android:layout_gravity="top"
         android:background="@drawable/gradient_top" />
 
-    <!-- ══ شريط علوي: زر رجوع + عنوان + زر معلومات ════════════ -->
+    <!-- 3. تدرج سفلي -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="160dp"
+        android:layout_gravity="bottom"
+        android:background="@drawable/gradient_bottom" />
+
+    <!-- 4. الشريط العلوي -->
     <LinearLayout
         android:id="@+id/lrecTopBar"
         android:layout_width="match_parent"
-        android:layout_height="56dp"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:paddingStart="4dp"
-        android:paddingEnd="8dp">
+        android:paddingStart="8dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="12dp"
+        android:paddingBottom="8dp">
 
-        <!-- زر الرجوع -->
         <ImageButton
             android:id="@+id/lrecBtnBack"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
             android:src="@drawable/ic_arrow_back"
             android:background="@drawable/btn_icon_ripple"
-            android:padding="11dp"
-            android:contentDescription="رجوع" />
+            android:contentDescription="رجوع"
+            android:tint="#FFFFFF" />
 
-        <!-- عنوان الملف -->
         <TextView
             android:id="@+id/lrecTvTitle"
             android:layout_width="0dp"
@@ -80,174 +57,219 @@
             android:layout_weight="1"
             android:layout_marginStart="4dp"
             android:layout_marginEnd="4dp"
-            android:textColor="@android:color/white"
-            android:textSize="14sp"
-            android:textStyle="bold"
+            android:text="ملف .lrec"
+            android:textColor="#FFFFFF"
+            android:textSize="15sp"
+            android:fontFamily="sans-serif-medium"
             android:maxLines="1"
-            android:ellipsize="end"
-            android:shadowColor="#AA000000"
-            android:shadowRadius="3"
-            android:text="…" />
+            android:ellipsize="end" />
 
-        <!-- زر المعلومات -->
         <ImageButton
             android:id="@+id/lrecBtnInfo"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:src="@drawable/ic_settings"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:src="@drawable/ic_info"
             android:background="@drawable/btn_icon_ripple"
-            android:padding="11dp"
-            android:contentDescription="معلومات الملف" />
+            android:contentDescription="معلومات"
+            android:tint="#FFFFFF" />
 
     </LinearLayout>
 
-    <!-- ══ تدرج سفلي ════════════════════════════════════════════ -->
-    <View
-        android:layout_width="match_parent"
-        android:layout_height="180dp"
-        android:layout_gravity="bottom"
-        android:background="@drawable/gradient_bottom" />
+    <!-- 5. لوحة الدردشة (يمين الشاشة) -->
+    <LinearLayout
+        android:id="@+id/lrecChatPanel"
+        android:layout_width="280dp"
+        android:layout_height="match_parent"
+        android:layout_gravity="end"
+        android:orientation="vertical"
+        android:background="#CC000000"
+        android:visibility="gone">
 
-    <!-- ══ شريط التحكم السفلي ═══════════════════════════════════ -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingStart="12dp"
+            android:paddingEnd="8dp"
+            android:background="#E6111111">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="💬  المحادثة"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp"
+                android:fontFamily="sans-serif-medium" />
+
+            <ImageButton
+                android:id="@+id/lrecBtnCloseChat"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:src="@drawable/ic_close"
+                android:background="@drawable/btn_icon_ripple"
+                android:tint="#AAAAAA"
+                android:contentDescription="إغلاق" />
+        </LinearLayout>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:background="#33FFFFFF" />
+
+        <TextView
+            android:id="@+id/lrecTvChatStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:padding="16dp"
+            android:text="لا توجد رسائل دردشة متاحة"
+            android:textColor="#888888"
+            android:textSize="13sp"
+            android:gravity="center"
+            android:visibility="gone" />
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/lrecChatRecycler"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp"
+            android:clipToPadding="false"
+            android:scrollbars="none" />
+
+    </LinearLayout>
+
+    <!-- 6. شاشة التحميل -->
+    <LinearLayout
+        android:id="@+id/lrecLoadingOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:background="#AA000000"
+        android:visibility="gone">
+
+        <ProgressBar
+            android:id="@+id/lrecProgressBar"
+            style="?android:attr/progressBarStyleLarge"
+            android:layout_width="56dp"
+            android:layout_height="56dp"
+            android:indeterminateTint="#4FC3F7" />
+
+        <TextView
+            android:id="@+id/lrecTvStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="جاري تحليل الملف…"
+            android:textColor="#CCFFFFFF"
+            android:textSize="14sp"
+            android:gravity="center" />
+
+    </LinearLayout>
+
+    <!-- 7. أدوات التحكم السفلية -->
     <LinearLayout
         android:id="@+id/lrecPlayerControls"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"
         android:orientation="vertical"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp"
-        android:paddingBottom="14dp">
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:paddingBottom="16dp">
 
-        <!-- صف الوقت (يسار = وقت حالي | يمين = المدة الكلية) -->
+        <!-- شريط التقدم والوقت -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:layout_marginBottom="2dp">
+            android:paddingStart="4dp"
+            android:paddingEnd="4dp"
+            android:paddingBottom="2dp">
 
             <TextView
                 android:id="@+id/lrecTvCurrentTime"
-                android:layout_width="wrap_content"
+                android:layout_width="52dp"
                 android:layout_height="wrap_content"
                 android:text="00:00"
-                android:textColor="@android:color/white"
+                android:textColor="#CCFFFFFF"
                 android:textSize="12sp"
-                android:fontFamily="monospace" />
+                android:gravity="center" />
 
-            <!-- مسافة مرنة -->
-            <View
+            <SeekBar
+                android:id="@+id/lrecSeekBar"
                 android:layout_width="0dp"
-                android:layout_height="1dp"
-                android:layout_weight="1" />
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:progressDrawable="@drawable/bg_seekbar_fill"
+                android:thumb="@drawable/bg_seekbar_thumb"
+                android:splitTrack="false"
+                android:max="1000" />
 
             <TextView
                 android:id="@+id/lrecTvDuration"
-                android:layout_width="wrap_content"
+                android:layout_width="52dp"
                 android:layout_height="wrap_content"
                 android:text="00:00"
-                android:textColor="#AAFFFFFF"
+                android:textColor="#CCFFFFFF"
                 android:textSize="12sp"
-                android:fontFamily="monospace" />
-
+                android:gravity="center" />
         </LinearLayout>
 
-        <!-- شريط التقدم -->
-        <SeekBar
-            android:id="@+id/lrecSeekBar"
-            android:layout_width="match_parent"
-            android:layout_height="32dp"
-            android:progressTint="@color/accent_blue"
-            android:progressBackgroundTint="#55FFFFFF"
-            android:thumbTint="@android:color/white"
-            android:splitTrack="false"
-            android:max="1000"
-            android:progress="0" />
-
-        <!-- صف أزرار التحكم (ترجيع + تشغيل/إيقاف + تقديم) -->
+        <!-- أزرار التحكم -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center"
-            android:layout_marginTop="4dp">
+            android:paddingTop="4dp">
 
-            <!-- ترجيع 10 ثوانٍ -->
             <ImageButton
                 android:id="@+id/lrecBtnRewind"
                 android:layout_width="52dp"
                 android:layout_height="52dp"
                 android:src="@drawable/ic_rewind"
                 android:background="@drawable/btn_control_ripple"
-                android:padding="11dp"
-                android:contentDescription="ترجيع 10 ثوانٍ"
-                android:enabled="false"
-                android:alpha="0.5" />
+                android:tint="#FFFFFF"
+                android:contentDescription="ترجيع 10 ثوانٍ" />
 
-            <!-- تشغيل / إيقاف مؤقت -->
             <ImageButton
                 android:id="@+id/lrecBtnPlayPause"
                 android:layout_width="64dp"
                 android:layout_height="64dp"
-                android:layout_marginStart="20dp"
-                android:layout_marginEnd="20dp"
+                android:layout_marginStart="8dp"
+                android:layout_marginEnd="8dp"
                 android:src="@drawable/ic_play"
                 android:background="@drawable/bg_play_button"
-                android:padding="14dp"
-                android:contentDescription="تشغيل / إيقاف مؤقت"
-                android:enabled="false"
-                android:alpha="0.5" />
+                android:tint="#FFFFFF"
+                android:contentDescription="تشغيل / إيقاف مؤقت" />
 
-            <!-- تقديم 10 ثوانٍ -->
             <ImageButton
                 android:id="@+id/lrecBtnForward"
                 android:layout_width="52dp"
                 android:layout_height="52dp"
                 android:src="@drawable/ic_forward"
                 android:background="@drawable/btn_control_ripple"
-                android:padding="11dp"
-                android:contentDescription="تقديم 10 ثوانٍ"
-                android:enabled="false"
-                android:alpha="0.5" />
+                android:tint="#FFFFFF"
+                android:contentDescription="تقديم 10 ثوانٍ" />
 
-        </LinearLayout>
+            <Space
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
 
-        <!-- شريط معلومات الصوت والشات (تنبيه التشفير) -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center"
-            android:layout_marginTop="8dp">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="🔇  الصوت: مشفَّر"
-                android:textColor="#FFCC44"
-                android:textSize="11sp"
-                android:background="#77000000"
-                android:paddingStart="10dp"
-                android:paddingEnd="10dp"
-                android:paddingTop="3dp"
-                android:paddingBottom="3dp" />
-
-            <View
-                android:layout_width="14dp"
-                android:layout_height="1dp" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="💬  الشات: مشفَّر"
-                android:textColor="#FFCC44"
-                android:textSize="11sp"
-                android:background="#77000000"
-                android:paddingStart="10dp"
-                android:paddingEnd="10dp"
-                android:paddingTop="3dp"
-                android:paddingBottom="3dp" />
+            <ImageButton
+                android:id="@+id/lrecBtnChat"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:src="@drawable/ic_chat"
+                android:background="@drawable/btn_icon_ripple"
+                android:tint="#AAAAAA"
+                android:contentDescription="تبديل الدردشة" />
 
         </LinearLayout>
 
