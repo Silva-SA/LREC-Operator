@@ -29,16 +29,14 @@ class LrecParser(private val file: File) {
         const val DEFAULT_FPS  = 5
         const val MS_PER_FRAME = 1000L / DEFAULT_FPS
 
-        // ⚠️ هذه القيم افتراضية فقط — سيتم تحديثها من الملف الفعلي
         const val FALLBACK_WIDTH  = 1024
         const val FALLBACK_HEIGHT = 768
 
         const val LINKTIVITY_SIG = "Linktivity"
 
-        private const val ZLIB_OFFSET        = 12
-        private const val FULL_WIDTH_OFFSET  = 9
-        private const val FULL_HEIGHT_OFFSET = 13
         private const val PIXEL_DATA_OFFSET  = 21
+        private const val DIM_SEARCH_START   = 4
+        private const val DIM_SEARCH_END     = 20
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -111,7 +109,6 @@ class LrecParser(private val file: File) {
     private val _audioBlocks = mutableListOf<AudioBlock>()
     private var _durationMs  = 0L
 
-    // الأبعاد الحقيقية — تُكتشف من أول Full Frame
     private var _realWidth  = 0
     private var _realHeight = 0
 
@@ -125,13 +122,9 @@ class LrecParser(private val file: File) {
     val hasChatContent:  Boolean get() = _chatEntries.isNotEmpty()
     val hasDecodedAudio: Boolean get() = _audioBlocks.isNotEmpty()
 
-    // لوحة الألوان — مُهيَّأة بألوان رمادية حتى تُقرأ اللوحة الحقيقية
-    private val colorPalette     = IntArray(256) { i ->
-        val v = (i * 255 / 255)
-        Color.rgb(v, v, v)
-    }
+    private val colorPalette     = IntArray(256) { i -> Color.rgb(i, i, i) }
     private var paletteLoaded    = false
-    private val decompressBuffer = ByteArray(4_000_000) // 4MB كافٍ لأي دقة
+    private val decompressBuffer = ByteArray(4_000_000)
 
     // ══════════════════════════════════════════════════════════════════
     //  الدالة الرئيسية
@@ -146,7 +139,6 @@ class LrecParser(private val file: File) {
                 _durationMs = if (_frames.isNotEmpty())
                     _frames.last().timestamp + MS_PER_FRAME else 0L
 
-                // تحديث الأبعاد الحقيقية في metadata
                 if (_realWidth > 0 && _realHeight > 0) {
                     metadata = metadata.copy(
                         screenWidth  = _realWidth,
@@ -154,8 +146,8 @@ class LrecParser(private val file: File) {
                     )
                 }
 
-                Log.d(TAG, "الأبعاد الحقيقية: ${metadata.screenWidth}×${metadata.screenHeight}")
-                Log.d(TAG, "الإطارات: ${_frames.size} | الصوت: ${_audioBlocks.size} | الدردشة: ${_chatEntries.size}")
+                Log.d(TAG, "الأبعاد: ${metadata.screenWidth}×${metadata.screenHeight}")
+                Log.d(TAG, "إطارات: ${_frames.size} | صوت: ${_audioBlocks.size} | دردشة: ${_chatEntries.size}")
 
                 metadata.isValid && _frames.isNotEmpty()
             }
@@ -224,48 +216,25 @@ class LrecParser(private val file: File) {
                             TYPE_VIEWPORT -> {
                                 val subtype = classifyViewportBlock(blockData)
                                 when (subtype) {
-                                    SUBTYPE_PALETTE -> {
-                                        extractPalette(blockData)
-                                    }
+                                    SUBTYPE_PALETTE -> extractPalette(blockData)
                                     SUBTYPE_FULLFRAME -> {
-                                        // اكتشاف الأبعاد من أول Full Frame
-                                        if (_realWidth == 0) {
-                                            detectDimensionsFromBlock(blockData)
-                                        }
-                                        _frames.add(LrecFrame(
-                                            fileOffset = pos,
-                                            type       = subtype,
-                                            dataLength = dataLen,
-                                            timestamp  = tsMs,
-                                            rawData    = blockData
-                                        ))
+                                        if (_realWidth == 0) detectDimensions(blockData)
+                                        _frames.add(LrecFrame(pos, subtype, dataLen, tsMs, blockData))
                                         tsMs += MS_PER_FRAME
                                     }
                                     SUBTYPE_DELTA -> {
-                                        _frames.add(LrecFrame(
-                                            fileOffset = pos,
-                                            type       = subtype,
-                                            dataLength = dataLen,
-                                            timestamp  = tsMs,
-                                            rawData    = blockData
-                                        ))
+                                        _frames.add(LrecFrame(pos, subtype, dataLen, tsMs, blockData))
                                         tsMs += MS_PER_FRAME
                                     }
                                 }
                             }
-
                             TYPE_NETWORK -> {
                                 audioBlockCount++
-                                extractAudioBlock(blockData, tsMs)?.let {
-                                    _audioBlocks.add(it)
-                                }
+                                extractAudioBlock(blockData, tsMs)?.let { _audioBlocks.add(it) }
                             }
-
                             TYPE_CHAT_RAW -> {
                                 chatBlockCount++
-                                extractChatEntry(blockData, tsMs)?.let {
-                                    _chatEntries.add(it)
-                                }
+                                extractChatEntry(blockData, tsMs)?.let { _chatEntries.add(it) }
                             }
                         }
                     }
@@ -280,216 +249,91 @@ class LrecParser(private val file: File) {
     }
 
     // ══════════════════════════════════════════════════════════════════
-    //  اكتشاف الأبعاد الحقيقية من Full Frame
-    //  ← هذا هو إصلاح مشكلة الصورة المقطوعة
+    //  المسح الديناميكي عن magic bytes لـ zlib
     // ══════════════════════════════════════════════════════════════════
 
-    private fun detectDimensionsFromBlock(blockData: ByteArray) {
-        val decompressed = zlibDecompress(blockData) ?: return
-        if (decompressed.size <= PIXEL_DATA_OFFSET) return
-
-        val w = readU16LE(decompressed, FULL_WIDTH_OFFSET)
-        val h = readU16LE(decompressed, FULL_HEIGHT_OFFSET)
-
-        if (w in 100..3840 && h in 100..2160) {
-            _realWidth  = w
-            _realHeight = h
-            Log.d(TAG, "اكتُشفت الأبعاد الحقيقية: ${w}×${h}")
-        }
-    }
-
-    // ══════════════════════════════════════════════════════════════════
-    //  استخراج الكتلة الصوتية
-    //  ← إصلاح مشكلة التشويش الصوتي
-    // ══════════════════════════════════════════════════════════════════
-
-    private fun extractAudioBlock(blockData: ByteArray, timestampMs: Long): AudioBlock? {
-        if (blockData.size < 16) return null
-
-        // ── البحث عن بداية البيانات الصوتية الفعلية ──────────────────
-        // نتجاوز الـ header ونبحث عن بيانات صوتية منطقية
-        val audioOffset = findValidAudioOffset(blockData)
-        if (audioOffset < 0) return null
-
-        val audioLen = blockData.size - audioOffset
-        if (audioLen < 8) return null
-
-        return AudioBlock(
-            timestampMs = timestampMs,
-            rawData     = blockData,
-            dataOffset  = audioOffset,
-            sampleRate  = 8000,
-            channels    = 1
-        )
-    }
-
-    /**
-     * البحث عن الـ offset الصحيح لبيانات الصوت
-     * يتجاوز الـ header ويجد أول byte منطقي لـ G.711
-     */
-    private fun findValidAudioOffset(blockData: ByteArray): Int {
-        // G.711 μ-law: القيم تتراوح بين 0x00 و 0xFF
-        // لكن القيم الصالحة صوتياً تميل لأن تكون موزّعة بشكل معقول
-        // الـ header عادةً يحتوي على أصفار أو قيم ثابتة
-
-        // جرب offsets شائعة
-        val candidates = listOf(8, 12, 16, 20, 4)
-        for (offset in candidates) {
-            if (offset + 8 > blockData.size) continue
-            val segment = blockData.copyOfRange(offset,
-                (offset + 64).coerceAtMost(blockData.size))
-
-            // تحقق من أن البيانات تبدو كصوت G.711
-            if (looksLikeAudio(segment)) {
-                return offset
+    private fun findZlibOffset(blockData: ByteArray): Int {
+        val validCmf = setOf(0x01, 0x5E, 0x9C, 0xDA)
+        for (i in 2 until blockData.size - 1) {
+            val b0 = blockData[i].toInt() and 0xFF
+            val b1 = blockData[i + 1].toInt() and 0xFF
+            if (b0 == 0x78 && b1 in validCmf) {
+                return i
             }
         }
-        // إذا لم نجد offset مناسب، ارجع null لتجنب التشويش
         return -1
     }
 
-    /**
-     * التحقق من أن البيانات تبدو كصوت حقيقي وليس مجرد بيانات عشوائية
-     */
-    private fun looksLikeAudio(data: ByteArray): Boolean {
-        if (data.size < 8) return false
+    private fun zlibDecompress(blockData: ByteArray): ByteArray? {
+        val zlibStart = findZlibOffset(blockData)
+        if (zlibStart < 0) return null
 
-        // عدّ التغيّرات بين القيم المتتالية
-        // الصوت الحقيقي له تغيّرات منتظمة نسبياً
-        var transitions = 0
-        var zeros = 0
-        for (i in 1 until data.size.coerceAtMost(32)) {
-            val diff = Math.abs(
-                (data[i].toInt() and 0xFF) - (data[i-1].toInt() and 0xFF)
-            )
-            if (diff > 5) transitions++
-            if (data[i] == 0.toByte()) zeros++
-        }
-
-        // إذا كانت كل القيم أصفاراً → header وليس صوت
-        if (zeros > data.size * 0.8) return false
-
-        // إذا كانت التغيّرات كثيرة جداً → ضجيج وليس صوت
-        if (transitions > data.size * 0.9) return false
-
-        return transitions > 2
+        val inflater = Inflater()
+        inflater.setInput(blockData, zlibStart, blockData.size - zlibStart)
+        return try {
+            var total = 0
+            while (!inflater.finished() && !inflater.needsInput()
+                && total < decompressBuffer.size) {
+                val n = inflater.inflate(decompressBuffer, total, decompressBuffer.size - total)
+                if (n <= 0) break
+                total += n
+            }
+            inflater.end()
+            if (total > 0) decompressBuffer.copyOf(total) else null
+        } catch (e: DataFormatException) {
+            inflater.end()
+            if (zlibStart + 2 < blockData.size) {
+                val inf2 = Inflater(true)
+                inf2.setInput(blockData, zlibStart + 2, blockData.size - zlibStart - 2)
+                try {
+                    var total = 0
+                    while (!inf2.finished() && !inf2.needsInput()
+                        && total < decompressBuffer.size) {
+                        val n = inf2.inflate(decompressBuffer, total, decompressBuffer.size - total)
+                        if (n <= 0) break
+                        total += n
+                    }
+                    inf2.end()
+                    if (total > 0) decompressBuffer.copyOf(total) else null
+                } catch (e2: Exception) { inf2.end(); null }
+            } else null
+        } catch (e: Exception) { inflater.end(); null }
     }
 
     // ══════════════════════════════════════════════════════════════════
-    //  استخراج رسالة الدردشة
-    //  ← إصلاح مشكلة النص المشوّه
+    //  اكتشاف الأبعاد بمطابقة حجم البيانات
     // ══════════════════════════════════════════════════════════════════
 
-    private fun extractChatEntry(blockData: ByteArray, timestampMs: Long): ChatEntry? {
-        if (blockData.size < 10) return null
+    private fun detectDimensions(blockData: ByteArray) {
+        val decompressed = zlibDecompress(blockData) ?: return
+        if (decompressed.size <= PIXEL_DATA_OFFSET) return
 
-        // ── المحاولة 1: نص ASCII/Latin واضح فقط ──────────────────────
-        // نبحث عن سلاسل نصية مستمرة من حروف ASCII قابلة للقراءة
-        val asciiResult = extractAsciiText(blockData)
-        if (asciiResult != null) {
-            Log.d(TAG, "دردشة ASCII: ${asciiResult.second}")
-            return ChatEntry(timestampMs, asciiResult.first, asciiResult.second, true)
-        }
+        val available = decompressed.size - PIXEL_DATA_OFFSET
 
-        // ── المحاولة 2: Base64 → UTF-8 ────────────────────────────────
-        val base64Result = tryBase64Decode(blockData)
-        if (base64Result != null) {
-            Log.d(TAG, "دردشة Base64: ${base64Result.second}")
-            return ChatEntry(timestampMs, base64Result.first, base64Result.second, true)
-        }
-
-        // ── تسجيل للتشخيص ─────────────────────────────────────────────
-        Log.d(TAG,
-            "كتلة دردشة | الحجم=${blockData.size} " +
-            "| أول 16 byte=${blockData.take(16).joinToString(" ") {
-                "%02X".format(it.toInt() and 0xFF) }}")
-
-        return null
-    }
-
-    private fun extractAsciiText(blockData: ByteArray): Pair<String, String>? {
-        // نبحث عن أطول سلسلة ASCII مستمرة داخل الكتلة
-        var bestStr = ""
-        var current = StringBuilder()
-
-        for (i in 4 until blockData.size) {
-            val c = blockData[i].toInt() and 0xFF
-            if (c in 32..126) {
-                current.append(c.toChar())
-            } else {
-                if (current.length > bestStr.length) {
-                    bestStr = current.toString()
+        for (wOff in DIM_SEARCH_START until DIM_SEARCH_END) {
+            for (hOff in (wOff + 2)..(wOff + 8)) {
+                if (hOff + 1 >= decompressed.size) continue
+                val w = readU16LE(decompressed, wOff)
+                val h = readU16LE(decompressed, hOff)
+                if (w !in 200..3840 || h !in 150..2160) continue
+                val expected = w * h
+                if (expected == available ||
+                    (expected in available * 95 / 100..available * 105 / 100)) {
+                    _realWidth  = w
+                    _realHeight = h
+                    Log.d(TAG, "✅ أبعاد: ${w}×${h}")
+                    return
                 }
-                current = StringBuilder()
             }
         }
-        if (current.length > bestStr.length) bestStr = current.toString()
 
-        // تنظيف النص
-        val cleaned = bestStr.trim().replace(Regex("\\s{2,}"), " ")
-
-        // ✅ التحقق الصارم: يجب أن يكون نصاً مقروءاً حقيقياً
-        if (cleaned.length < 3) return null
-        if (cleaned.length > 500) return null
-
-        // يجب أن تكون الغالبية حروفاً وأرقاماً
-        val alphaNum = cleaned.count { it.isLetterOrDigit() || it == ' ' }
-        if (alphaNum.toFloat() / cleaned.length < 0.7f) return null
-
-        // يجب ألا يكون مجرد رموز أو أرقام متكررة
-        val uniqueChars = cleaned.toSet().size
-        if (uniqueChars < 3) return null
-
-        return parseChatText(cleaned)
-    }
-
-    private fun tryBase64Decode(blockData: ByteArray): Pair<String, String>? {
-        for (offset in listOf(4, 6, 8, 12)) {
-            if (offset >= blockData.size) continue
-            val remaining = blockData.size - offset
-            if (remaining < 8) continue
-
-            try {
-                val rawStr = String(blockData, offset, remaining, Charsets.ISO_8859_1)
-                // Base64 صالح: فقط الحروف والأرقام و +/= ويجب أن يكون طويلاً كافياً
-                val base64Regex = Regex("[A-Za-z0-9+/]{12,}={0,2}")
-                val match = base64Regex.find(rawStr) ?: continue
-
-                val decoded = android.util.Base64.decode(match.value,
-                                  android.util.Base64.DEFAULT)
-                if (decoded.size < 3) continue
-
-                val text = String(decoded, Charsets.UTF_8).trim()
-
-                // ✅ تحقق صارم من النص المفكوك
-                if (text.length < 3) continue
-                if (text.length > 500) continue
-                val printable = text.count { it.code in 32..126 || it.code > 160 }
-                if (printable.toFloat() / text.length < 0.8f) continue
-
-                return parseChatText(text)
-            } catch (e: Exception) { continue }
-        }
-        return null
-    }
-
-    private fun isValidChatText(text: String): Boolean {
-        if (text.length < 3 || text.length > 500) return false
-        val printable = text.count { it.code in 32..126 || it.code > 160 }
-        return printable.toFloat() / text.length > 0.8f
-    }
-
-    private fun parseChatText(text: String): Pair<String, String> {
-        val colonIdx = text.indexOf(':')
-        return if (colonIdx in 1..30) {
-            val sender  = text.substring(0, colonIdx).trim()
-            val message = text.substring(colonIdx + 1).trim()
-            if (sender.isNotBlank() && message.isNotBlank() && sender.length < 30)
-                Pair(sender, message)
-            else
-                Pair("مشارك", text)
-        } else {
-            Pair("مشارك", text)
+        // Fallback
+        val w = readU16LE(decompressed, 9)
+        val h = readU16LE(decompressed, 13)
+        if (w in 200..3840 && h in 150..2160) {
+            _realWidth  = w
+            _realHeight = h
+            Log.d(TAG, "✅ أبعاد fallback: ${w}×${h}")
         }
     }
 
@@ -498,20 +342,17 @@ class LrecParser(private val file: File) {
     // ══════════════════════════════════════════════════════════════════
 
     private fun classifyViewportBlock(blockData: ByteArray): Int {
-        if (blockData.size < 13) return SUBTYPE_METADATA
-        val b12 = blockData[12].toInt() and 0xFF
-        val b13 = if (blockData.size > 13) blockData[13].toInt() and 0xFF else 0
-        val hasZlib = (b12 == 0x78) && (b13 in listOf(0x01, 0x5E, 0x9C, 0xDA))
-        return if (!hasZlib) {
-            when {
-                blockData.size == 44   -> SUBTYPE_METADATA
-                blockData.size == 1036 -> SUBTYPE_PALETTE
-                else                   -> SUBTYPE_METADATA
+        if (blockData.size < 8) return SUBTYPE_METADATA
+        val zlibOff = findZlibOffset(blockData)
+        if (zlibOff < 0) {
+            return when (blockData.size) {
+                44   -> SUBTYPE_METADATA
+                1036 -> SUBTYPE_PALETTE
+                else -> SUBTYPE_METADATA
             }
-        } else {
-            val frameFlag = blockData[6].toInt() and 0xFF
-            if (frameFlag == 0x02) SUBTYPE_FULLFRAME else SUBTYPE_DELTA
         }
+        val frameFlag = blockData[6].toInt() and 0xFF
+        return if (frameFlag == 0x02) SUBTYPE_FULLFRAME else SUBTYPE_DELTA
     }
 
     private fun extractPalette(blockData: ByteArray) {
@@ -524,54 +365,7 @@ class LrecParser(private val file: File) {
             colorPalette[i] = Color.rgb(red, green, blue)
         }
         paletteLoaded = true
-        Log.d(TAG, "لوحة الألوان مُحمَّلة ✅")
-    }
-
-    // ══════════════════════════════════════════════════════════════════
-    //  فك ضغط zlib
-    // ══════════════════════════════════════════════════════════════════
-
-    private fun zlibDecompress(blockData: ByteArray): ByteArray? {
-        if (blockData.size <= ZLIB_OFFSET + 2) return null
-        val b12 = blockData[ZLIB_OFFSET].toInt() and 0xFF
-        val b13 = blockData[ZLIB_OFFSET + 1].toInt() and 0xFF
-        val hasZlib = (b12 == 0x78) && (b13 in listOf(0x01, 0x5E, 0x9C, 0xDA))
-        if (!hasZlib) return null
-
-        val inflater = Inflater()
-        inflater.setInput(blockData, ZLIB_OFFSET, blockData.size - ZLIB_OFFSET)
-        return try {
-            var total = 0
-            while (!inflater.finished() && !inflater.needsInput()
-                   && total < decompressBuffer.size) {
-                val n = inflater.inflate(
-                    decompressBuffer, total,
-                    decompressBuffer.size - total
-                )
-                if (n <= 0) break
-                total += n
-            }
-            inflater.end()
-            if (total > 0) decompressBuffer.copyOf(total) else null
-        } catch (e: DataFormatException) {
-            inflater.end()
-            val inf2 = Inflater(true)
-            inf2.setInput(blockData, ZLIB_OFFSET + 2, blockData.size - ZLIB_OFFSET - 2)
-            try {
-                var total = 0
-                while (!inf2.finished() && !inf2.needsInput()
-                       && total < decompressBuffer.size) {
-                    val n = inf2.inflate(
-                        decompressBuffer, total,
-                        decompressBuffer.size - total
-                    )
-                    if (n <= 0) break
-                    total += n
-                }
-                inf2.end()
-                if (total > 0) decompressBuffer.copyOf(total) else null
-            } catch (e2: Exception) { inf2.end(); null }
-        } catch (e: Exception) { inflater.end(); null }
+        Log.d(TAG, "✅ لوحة الألوان محمّلة")
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -588,23 +382,38 @@ class LrecParser(private val file: File) {
                 else              -> null
             }
         } catch (e: Exception) {
-            Log.w(TAG, "خطأ في فك تشفير الإطار: ${e.message}")
+            Log.w(TAG, "خطأ في فك الإطار: ${e.message}")
             null
         }
     }
 
     private fun decodeFullFrame(raw: ByteArray): ScreenFrameData? {
-        if (raw.size < PIXEL_DATA_OFFSET + 100) return null
+        if (raw.size <= PIXEL_DATA_OFFSET) return null
+        val available = raw.size - PIXEL_DATA_OFFSET
 
-        val w = readU16LE(raw, FULL_WIDTH_OFFSET).let {
-            if (it in 100..3840) it else (_realWidth.takeIf { r -> r > 0 } ?: FALLBACK_WIDTH)
-        }
-        val h = readU16LE(raw, FULL_HEIGHT_OFFSET).let {
-            if (it in 100..2160) it else (_realHeight.takeIf { r -> r > 0 } ?: FALLBACK_HEIGHT)
+        var w = 0; var h = 0
+        outerLoop@ for (wOff in DIM_SEARCH_START until DIM_SEARCH_END) {
+            for (hOff in (wOff + 2)..(wOff + 8)) {
+                if (hOff + 1 >= raw.size) continue
+                val tw = readU16LE(raw, wOff)
+                val th = readU16LE(raw, hOff)
+                if (tw !in 200..3840 || th !in 150..2160) continue
+                val expected = tw * th
+                if (expected == available ||
+                    (expected in available * 95 / 100..available * 105 / 100)) {
+                    w = tw; h = th
+                    break@outerLoop
+                }
+            }
         }
 
-        // تحديث الأبعاد الحقيقية عند اكتشافها
-        if (_realWidth == 0 && w > 0) { _realWidth = w; _realHeight = h }
+        if (w == 0) {
+            w = readU16LE(raw, 9).let { if (it in 200..3840) it else _realWidth }
+            h = readU16LE(raw, 13).let { if (it in 150..2160) it else _realHeight }
+        }
+        if (w == 0) w = _realWidth.takeIf { it > 0 } ?: FALLBACK_WIDTH
+        if (h == 0) h = _realHeight.takeIf { it > 0 } ?: FALLBACK_HEIGHT
+        if (_realWidth == 0) { _realWidth = w; _realHeight = h }
 
         val pixelCount = w * h
         if (raw.size < PIXEL_DATA_OFFSET + pixelCount) return null
@@ -617,21 +426,16 @@ class LrecParser(private val file: File) {
 
     private fun decodeDeltaFrame(raw: ByteArray): ScreenFrameData? {
         if (raw.size < PIXEL_DATA_OFFSET + 1) return null
-
         val canvasW = _realWidth.takeIf  { it > 0 } ?: FALLBACK_WIDTH
         val canvasH = _realHeight.takeIf { it > 0 } ?: FALLBACK_HEIGHT
-
         val x = (readU32LE(raw, 0)  shr 8).toInt()
         val y = (readU32LE(raw, 4)  shr 8).toInt()
         val w = (readU32LE(raw, 8)  shr 8).toInt()
         val h = (readU32LE(raw, 12) shr 8).toInt()
-
         if (w <= 0 || h <= 0 || w > canvasW || h > canvasH) return null
         if (x < 0 || y < 0 || x + w > canvasW || y + h > canvasH) return null
-
         val pixelCount = w * h
         if (raw.size < PIXEL_DATA_OFFSET + pixelCount) return null
-
         val pixels = IntArray(pixelCount) { i ->
             colorPalette[raw[PIXEL_DATA_OFFSET + i].toInt() and 0xFF]
         }
@@ -651,12 +455,130 @@ class LrecParser(private val file: File) {
             val safeW = frameData.width .coerceAtMost(bitmap.width  - safeX)
             val safeH = frameData.height.coerceAtMost(bitmap.height - safeY)
             if (safeW > 0 && safeH > 0 && frameData.pixels.size >= safeW * safeH) {
-                bitmap.setPixels(
-                    frameData.pixels, 0, frameData.width,
-                    safeX, safeY, safeW, safeH
-                )
+                bitmap.setPixels(frameData.pixels, 0, frameData.width, safeX, safeY, safeW, safeH)
             }
         }
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  استخراج الصوت
+    // ══════════════════════════════════════════════════════════════════
+
+    private fun extractAudioBlock(blockData: ByteArray, timestampMs: Long): AudioBlock? {
+        if (blockData.size < 16) return null
+        val audioOffset = 8
+        val audioLen    = blockData.size - audioOffset
+        if (audioLen < 8) return null
+        return AudioBlock(
+            timestampMs = timestampMs,
+            rawData     = blockData,
+            dataOffset  = audioOffset,
+            sampleRate  = 8000,
+            channels    = 1
+        )
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  استخراج الدردشة — يدعم العربية UTF-8
+    // ══════════════════════════════════════════════════════════════════
+
+    private fun extractChatEntry(blockData: ByteArray, timestampMs: Long): ChatEntry? {
+        if (blockData.size < 10) return null
+
+        val offsets = listOf(4, 6, 8, 10, 12)
+
+        for (offset in offsets) {
+            if (offset >= blockData.size) continue
+            val len = blockData.size - offset
+            if (len < 3) continue
+
+            // محاولة UTF-8 (يدعم العربية)
+            try {
+                val text = String(blockData, offset, len, Charsets.UTF_8).trim()
+                if (isValidText(text)) {
+                    Log.d(TAG, "✅ دردشة UTF-8 | $text")
+                    return ChatEntry(timestampMs, parseSender(text), parseMessage(text), true)
+                }
+            } catch (e: Exception) { }
+
+            // محاولة UTF-16LE
+            if (len >= 4 && len % 2 == 0) {
+                try {
+                    val text = String(blockData, offset, len, Charsets.UTF_16LE).trim()
+                    if (isValidText(text)) {
+                        Log.d(TAG, "✅ دردشة UTF-16LE | $text")
+                        return ChatEntry(timestampMs, parseSender(text), parseMessage(text), true)
+                    }
+                } catch (e: Exception) { }
+            }
+        }
+
+        // محاولة Base64
+        tryBase64Chat(blockData)?.let {
+            return ChatEntry(timestampMs, it.first, it.second, true)
+        }
+
+        Log.d(TAG,
+            "كتلة دردشة غير مفكوكة | حجم=${blockData.size} " +
+            "| hex=${blockData.take(16).joinToString(" ") { "%02X".format(it.toInt() and 0xFF) }}")
+
+        return null
+    }
+
+    private fun isValidText(text: String): Boolean {
+        if (text.length < 3 || text.length > 1000) return false
+        var validCount = 0
+        for (c in text) {
+            when {
+                c.code in 32..126         -> validCount++
+                c.code in 0x0600..0x06FF  -> validCount++ // عربية
+                c.code in 0x0750..0x077F  -> validCount++ // ملحق عربي
+                c.code in 0xFB50..0xFDFF  -> validCount++ // عربية مقدمة A
+                c.code in 0xFE70..0xFEFF  -> validCount++ // عربية مقدمة B
+                c.isWhitespace()          -> validCount++
+                c.isLetterOrDigit()       -> validCount++
+            }
+        }
+        if (validCount.toFloat() / text.length < 0.7f) return false
+        if (!text.any { it.isLetter() }) return false
+        return text.toSet().size >= 3
+    }
+
+    private fun parseSender(text: String): String {
+        val colonIdx = text.indexOf(':')
+        if (colonIdx in 1..40) {
+            val candidate = text.substring(0, colonIdx).trim()
+            if (candidate.isNotBlank() && candidate.length < 40 && !candidate.contains('\n'))
+                return candidate
+        }
+        return "مشارك"
+    }
+
+    private fun parseMessage(text: String): String {
+        val colonIdx = text.indexOf(':')
+        return if (colonIdx in 1..40 && colonIdx + 1 < text.length)
+            text.substring(colonIdx + 1).trim()
+        else text.trim()
+    }
+
+    private fun tryBase64Chat(blockData: ByteArray): Pair<String, String>? {
+        for (offset in listOf(4, 6, 8, 12)) {
+            if (offset >= blockData.size) continue
+            val remaining = blockData.size - offset
+            if (remaining < 8) continue
+            try {
+                val rawStr = String(blockData, offset, remaining, Charsets.ISO_8859_1)
+                val match  = Regex("[A-Za-z0-9+/]{12,}={0,2}").find(rawStr) ?: continue
+                val decoded = android.util.Base64.decode(match.value, android.util.Base64.DEFAULT)
+                if (decoded.size < 3) continue
+                val text = String(decoded, Charsets.UTF_8).trim()
+                if (isValidText(text)) {
+                    Log.d(TAG, "✅ دردشة Base64 | $text")
+                    return Pair(parseSender(text), parseMessage(text))
+                }
+            } catch (e: Exception) { continue }
+        }
+        return null
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -694,7 +616,7 @@ class LrecParser(private val file: File) {
     // ══════════════════════════════════════════════════════════════════
 
     private fun readU16LE(data: ByteArray, offset: Int): Int {
-        if (offset + 1 >= data.size) return 0
+        if (offset < 0 || offset + 1 >= data.size) return 0
         return (data[offset].toInt() and 0xFF) or
                ((data[offset + 1].toInt() and 0xFF) shl 8)
     }
@@ -715,8 +637,7 @@ class LrecParser(private val file: File) {
             if (buf[i] == 0.toByte()) {
                 if (i > s) {
                     val str = String(buf, s, i - s, Charsets.UTF_8)
-                    if (str.isNotBlank() &&
-                        str.all { it.code in 32..126 || it.code > 160 })
+                    if (str.isNotBlank() && str.all { it.code in 32..126 || it.code > 160 })
                         result.add(str)
                 }
                 s = i + 1
