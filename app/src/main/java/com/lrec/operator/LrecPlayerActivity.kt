@@ -147,8 +147,7 @@ class LrecPlayerActivity : AppCompatActivity() {
         tvChatStatus   = findViewById(R.id.lrecTvChatStatus)
 
         // tvAudioStatus اختياري — إن لم يوجد في XML يُهمَل
-        tvAudioStatus  = try { findViewById(R.id.lrecTvAudioStatus) }
-                         catch (e: Exception) { TextView(this) }
+        tvAudioStatus  = TextView(this)
 
         setControlsEnabled(false)
         btnChat.isEnabled = false
