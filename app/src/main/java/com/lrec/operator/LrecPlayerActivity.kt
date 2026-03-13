@@ -19,53 +19,72 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import java.io.File
 import java.io.FileOutputStream
+import java.io.RandomAccessFile
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 class LrecPlayerActivity : AppCompatActivity() {
 
-    private lateinit var imageView:       ImageView
-    private lateinit var btnPlayPause:    ImageButton
-    private lateinit var btnRewind:       ImageButton
-    private lateinit var btnForward:      ImageButton
-    private lateinit var btnBack:         ImageButton
-    private lateinit var btnInfo:         ImageButton
-    private lateinit var btnChat:         ImageButton
-    private lateinit var btnCloseChat:    ImageButton
-    private lateinit var seekBar:         SeekBar
-    private lateinit var tvCurrentTime:   TextView
-    private lateinit var tvDuration:      TextView
-    private lateinit var tvTitle:         TextView
-    private lateinit var playerControls:  LinearLayout
-    private lateinit var topBar:          LinearLayout
-    private lateinit var loadingOverlay:  LinearLayout
-    private lateinit var progressBar:     ProgressBar
-    private lateinit var tvStatus:        TextView
-    private lateinit var chatPanel:       LinearLayout
-    private lateinit var chatRecycler:    RecyclerView
-    private lateinit var tvChatStatus:    TextView
+    // ── Views ─────────────────────────────────────────────────────────
+    private lateinit var imageView:      ImageView
+    private lateinit var btnPlayPause:   ImageButton
+    private lateinit var btnRewind:      ImageButton
+    private lateinit var btnForward:     ImageButton
+    private lateinit var btnBack:        ImageButton
+    private lateinit var btnInfo:        ImageButton
+    private lateinit var btnChat:        ImageButton
+    private lateinit var btnCloseChat:   ImageButton
+    private lateinit var seekBar:        SeekBar
+    private lateinit var tvCurrentTime:  TextView
+    private lateinit var tvDuration:     TextView
+    private lateinit var tvTitle:        TextView
+    private lateinit var tvAudioStatus:  TextView
+    private lateinit var playerControls: LinearLayout
+    private lateinit var topBar:         LinearLayout
+    private lateinit var loadingOverlay: LinearLayout
+    private lateinit var progressBar:    ProgressBar
+    private lateinit var tvStatus:       TextView
+    private lateinit var chatPanel:      LinearLayout
+    private lateinit var chatRecycler:   RecyclerView
+    private lateinit var tvChatStatus:   TextView
 
-    private var lrecParser:   LrecParser?                = null
-    private var frames:       List<LrecParser.LrecFrame>  = emptyList()
-    private var chatEntries:  List<LrecParser.ChatEntry>  = emptyList()
-    private var audioBlocks:  List<LrecParser.AudioBlock> = emptyList()
+    // ══════════════════════════════════════════════════════════════════
+    //  الصيغة المكتشفة + بيانات التشغيل
+    // ══════════════════════════════════════════════════════════════════
+
+    private var detectedFormat = LrecFormatDetector.Format.UNKNOWN
+
+    // ── صيغة Block ────────────────────────────────────────────────────
+    private var lrecParser:  LrecParser?                 = null
+    private var frames:      List<LrecParser.LrecFrame>   = emptyList()
+    private var audioBlocks: List<LrecParser.AudioBlock>  = emptyList()
+
+    // ── صيغة AVI ──────────────────────────────────────────────────────
+    private var aviParser:   LrecAviParser?              = null
+    private var aviResult:   LrecAviParser.ParseResult?  = null
+    private var aviFile:     File?                       = null
+    private var aviRaf:      RandomAccessFile?           = null
+    private var videoDecoder: LrecVideoDecoder?          = null
+
+    // ── مشترك ─────────────────────────────────────────────────────────
+    private val chatManager  = LrecChatManager()
+    private val audioPlayer  = LrecAudioPlayer()
 
     private var canvasWidth  = 0
     private var canvasHeight = 0
-
     private var workBitmap:    Bitmap? = null
     private var displayBitmap: Bitmap? = null
 
-    private val frameIndex = AtomicInteger(0)
-    private val isPlaying  = AtomicBoolean(false)
-    private val isParsed   = AtomicBoolean(false)
+    private val frameIndex   = AtomicInteger(0)
+    private val isPlaying    = AtomicBoolean(false)
+    private val isParsed     = AtomicBoolean(false)
 
-    private val uiHandler = Handler(Looper.getMainLooper())
-    private var playThread: Thread? = null
+    private val uiHandler    = Handler(Looper.getMainLooper())
+    private var playThread:  Thread? = null
 
-    private val audioPlayer   = LrecAudioPlayer()
-    private var audioEnabled  = false
-    private var detectedCodec = LrecAudioPlayer.AudioCodec.ULAW
+    private var audioEnabled    = false
+    private var detectedCodec   = LrecAudioPlayer.AudioCodec.ULAW
+    private var audioStatusText = "لا يوجد صوت"
 
     private var controlsVisible = true
     private val HIDE_DELAY_MS   = 3_500L
@@ -76,6 +95,7 @@ class LrecPlayerActivity : AppCompatActivity() {
 
     private lateinit var gestureDetector: GestureDetector
 
+    // ── دورة الحياة ───────────────────────────────────────────────────
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -94,6 +114,8 @@ class LrecPlayerActivity : AppCompatActivity() {
         playThread?.interrupt()
         uiHandler.removeCallbacksAndMessages(null)
         audioPlayer.release()
+        videoDecoder?.release()
+        aviRaf?.close()
         workBitmap?.recycle()
         displayBitmap?.recycle()
         workBitmap    = null
@@ -101,6 +123,7 @@ class LrecPlayerActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
+    // ── ربط العناصر ───────────────────────────────────────────────────
     private fun bindViews() {
         imageView      = findViewById(R.id.lrecImageView)
         btnPlayPause   = findViewById(R.id.lrecBtnPlayPause)
@@ -123,11 +146,16 @@ class LrecPlayerActivity : AppCompatActivity() {
         chatRecycler   = findViewById(R.id.lrecChatRecycler)
         tvChatStatus   = findViewById(R.id.lrecTvChatStatus)
 
+        // tvAudioStatus اختياري — إن لم يوجد في XML يُهمَل
+        tvAudioStatus  = try { findViewById(R.id.lrecTvAudioStatus) }
+                         catch (e: Exception) { TextView(this) }
+
         setControlsEnabled(false)
         btnChat.isEnabled = false
         chatRecycler.layoutManager = LinearLayoutManager(this).apply { stackFromEnd = true }
     }
 
+    // ── الأحداث ───────────────────────────────────────────────────────
     private fun setupListeners() {
         btnBack.setOnClickListener      { finish() }
         btnPlayPause.setOnClickListener { togglePlayPause() }
@@ -140,14 +168,17 @@ class LrecPlayerActivity : AppCompatActivity() {
         seekBar.max = 1000
         seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(sb: SeekBar, progress: Int, fromUser: Boolean) {
-                if (fromUser && frames.isNotEmpty()) {
-                    val target = (progress.toLong() * frames.size / 1000L)
-                        .toInt().coerceIn(0, frames.size - 1)
-                    frameIndex.set(target)
-                    updateTimeTextUI()
-                    showControls()
-                    syncChatToFrame(target)
-                    if (!isPlaying.get()) renderCurrentFrameAsync()
+                if (fromUser) {
+                    val totalFrames = getTotalFrames()
+                    if (totalFrames > 0) {
+                        val target = (progress.toLong() * totalFrames / 1000L)
+                            .toInt().coerceIn(0, totalFrames - 1)
+                        frameIndex.set(target)
+                        updateTimeTextUI()
+                        showControls()
+                        syncChatToTime(getTimeAtFrame(target))
+                        if (!isPlaying.get()) renderCurrentFrameAsync()
+                    }
                 }
             }
             override fun onStartTrackingTouch(sb: SeekBar) {
@@ -168,6 +199,10 @@ class LrecPlayerActivity : AppCompatActivity() {
         imageView.setOnTouchListener { _, event -> gestureDetector.onTouchEvent(event); true }
     }
 
+    // ══════════════════════════════════════════════════════════════════
+    //  تحميل الملف — يكتشف الصيغة تلقائياً
+    // ══════════════════════════════════════════════════════════════════
+
     private fun loadFile() {
         val uri = intent.data ?: run { finish(); return }
         tvTitle.text = uri.lastPathSegment ?: "ملف .lrec"
@@ -176,83 +211,202 @@ class LrecPlayerActivity : AppCompatActivity() {
         Thread {
             val filePath = copyToCache(uri)
             val file     = File(filePath)
-            val parser   = LrecParser(file)
-            val ok       = parser.parse()
 
-            runOnUiThread {
-                showLoading(false)
-                if (ok) {
-                    lrecParser   = parser
-                    frames       = parser.getAllFrames()
-                    chatEntries  = parser.getChatEntries()
-                    audioBlocks  = parser.getAudioBlocks()
-                    isParsed.set(true)
+            // ── اكتشاف الصيغة ──────────────────────────────────────
+            val format = LrecFormatDetector.detect(file)
 
-                    canvasWidth  = parser.metadata.screenWidth
-                    canvasHeight = parser.metadata.screenHeight
-
-                    workBitmap    = Bitmap.createBitmap(canvasWidth, canvasHeight,
-                                        Bitmap.Config.ARGB_8888)
-                    displayBitmap = Bitmap.createBitmap(canvasWidth, canvasHeight,
-                                        Bitmap.Config.ARGB_8888)
-
-                    if (audioBlocks.isNotEmpty()) {
-                        audioPlayer.initialize(
-                            sampleRate = audioBlocks[0].sampleRate,
-                            stereo     = audioBlocks[0].channels == 2
-                        )
-                        detectedCodec = audioPlayer.detectBestCodec(
-                            sampleBlocks = audioBlocks.take(20).map { it.rawData },
-                            dataOffset   = audioBlocks[0].dataOffset
-                        )
-                        audioEnabled = true
-                    }
-
-                    setupChatPanel()
-                    tvDuration.text    = formatTime(parser.getDurationMs())
-                    tvCurrentTime.text = "00:00"
-                    tvStatus.text      = buildStatusText(parser)
-                    setControlsEnabled(true)
-                    btnChat.isEnabled  = true
-                    startPlayback()
-                    showControls()
-                } else {
-                    tvStatus.text       = "❌  تعذّر فتح الملف"
-                    tvStatus.visibility = View.VISIBLE
+            val ok = when (format) {
+                LrecFormatDetector.Format.AVI   -> loadAviFile(file)
+                LrecFormatDetector.Format.BLOCK -> loadBlockFile(file)
+                LrecFormatDetector.Format.UNKNOWN -> {
+                    // Fallback: جرّب Block أولاً ثم AVI
+                    loadBlockFile(file) || loadAviFile(file)
                 }
             }
+
+            runOnUiThread { onFileLoaded(ok, format) }
         }.start()
     }
 
-    private fun buildStatusText(parser: LrecParser): String = buildString {
-        append("${frames.size} إطار | ${canvasWidth}×${canvasHeight}")
-        when {
-            audioBlocks.isNotEmpty() ->
-                append("  |  🔊 ${audioBlocks.size} كتلة ($detectedCodec)")
-            parser.hasAudioBlocks ->
-                append("  |  🔇 ${parser.audioBlockCount} كتلة")
+    // ── تحميل صيغة Block ──────────────────────────────────────────────
+    private fun loadBlockFile(file: File): Boolean {
+        val parser = LrecParser(file)
+        val ok     = parser.parse()
+        if (!ok) return false
+
+        lrecParser      = parser
+        frames          = parser.getAllFrames()
+        audioBlocks     = parser.getAudioBlocks()
+        detectedFormat  = LrecFormatDetector.Format.BLOCK
+
+        // الدردشة
+        chatManager.loadFromChatEntries(parser.getChatEntries())
+
+        // الصوت
+        if (audioBlocks.isNotEmpty()) {
+            val sr = audioBlocks[0].sampleRate
+            audioPlayer.initialize(sr, audioBlocks[0].channels == 2)
+            detectedCodec   = audioPlayer.detectBestCodec(
+                audioBlocks.take(20).map { it.rawData },
+                audioBlocks[0].dataOffset
+            )
+            audioEnabled    = true
+            audioStatusText = audioPlayer.codecName
+        } else {
+            audioStatusText = if (parser.hasAudioBlocks) "مشفّر" else "لا يوجد"
         }
-        when {
-            chatEntries.isNotEmpty() -> append("  |  💬 ${chatEntries.size} رسالة")
-            parser.hasChatBlocks     -> append("  |  💬 ${parser.chatBlockCount} كتلة")
+
+        canvasWidth  = parser.metadata.screenWidth
+        canvasHeight = parser.metadata.screenHeight
+        return true
+    }
+
+    // ── تحميل صيغة AVI ────────────────────────────────────────────────
+    private fun loadAviFile(file: File): Boolean {
+        val parser = LrecAviParser(file)
+        val result = parser.parse()
+        if (!result.isValid) return false
+
+        aviParser      = parser
+        aviResult      = result
+        aviFile        = file
+        aviRaf         = RandomAccessFile(file, "r")
+        detectedFormat = LrecFormatDetector.Format.AVI
+
+        canvasWidth  = result.videoWidth.takeIf  { it > 0 } ?: 1024
+        canvasHeight = result.videoHeight.takeIf { it > 0 } ?: 768
+
+        // تهيئة H.263 decoder
+        if (result.videoChunks.isNotEmpty()) {
+            videoDecoder = LrecVideoDecoder(canvasWidth, canvasHeight)
+            if (!videoDecoder!!.initialize()) {
+                videoDecoder = null
+            }
+        }
+
+        // الدردشة من كتل النص
+        val raf = aviRaf
+        if (raf != null) {
+            result.textChunks.forEach { chunk ->
+                try {
+                    val data = ByteArray(chunk.size)
+                    raf.seek(chunk.offset)
+                    raf.read(data)
+                    chatManager.addRawBlock(data, chunk.timestampMs)
+                } catch (e: Exception) { }
+            }
+        }
+
+        // الصوت
+        if (result.audioChunks.isNotEmpty()) {
+            val af = result.audioFormat
+            audioPlayer.initialize(af.sampleRate, af.channels == 2)
+            detectedCodec = when (af.codec) {
+                G711Codec.Codec.ALAW  -> LrecAudioPlayer.AudioCodec.ALAW
+                G711Codec.Codec.PCM8  -> LrecAudioPlayer.AudioCodec.PCM8
+                G711Codec.Codec.PCM16 -> LrecAudioPlayer.AudioCodec.PCM16
+                else                  -> LrecAudioPlayer.AudioCodec.ULAW
+            }
+            audioEnabled    = true
+            audioStatusText = when (af.formatTag) {
+                7    -> "G.711 μ-law"
+                6    -> "G.711 A-law"
+                1    -> "PCM ${af.bitsPerSample}-bit"
+                else -> "غير معروف (${af.formatTag})"
+            }
+        } else {
+            audioStatusText = "لا يوجد صوت"
+        }
+
+        return true
+    }
+
+    private fun onFileLoaded(ok: Boolean, format: LrecFormatDetector.Format) {
+        showLoading(false)
+        if (!ok) {
+            tvStatus.text       = "❌ تعذّر فتح الملف"
+            tvStatus.visibility = View.VISIBLE
+            return
+        }
+
+        isParsed.set(true)
+
+        workBitmap    = Bitmap.createBitmap(canvasWidth, canvasHeight, Bitmap.Config.ARGB_8888)
+        displayBitmap = Bitmap.createBitmap(canvasWidth, canvasHeight, Bitmap.Config.ARGB_8888)
+
+        setupChatPanel()
+        tvDuration.text    = formatTime(getDurationMs())
+        tvCurrentTime.text = "00:00"
+        tvAudioStatus.text = audioStatusText
+        tvStatus.text      = buildStatusText(format)
+        setControlsEnabled(true)
+        btnChat.isEnabled  = true
+        startPlayback()
+        showControls()
+    }
+
+    private fun buildStatusText(format: LrecFormatDetector.Format): String = buildString {
+        append("${getTotalFrames()} إطار | ${canvasWidth}×${canvasHeight}")
+        append("  |  🔊 $audioStatusText")
+        val msgCount = chatManager.messageCount
+        if (msgCount > 0) append("  |  💬 $msgCount رسالة")
+        append("  [${format.name}]")
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  واجهات موحّدة للصيغتين
+    // ══════════════════════════════════════════════════════════════════
+
+    private fun getTotalFrames(): Int = when (detectedFormat) {
+        LrecFormatDetector.Format.AVI   -> aviResult?.videoChunks?.size ?: 0
+        LrecFormatDetector.Format.BLOCK -> frames.size
+        else -> frames.size.takeIf { it > 0 } ?: (aviResult?.videoChunks?.size ?: 0)
+    }
+
+    private fun getDurationMs(): Long = when (detectedFormat) {
+        LrecFormatDetector.Format.AVI   -> aviResult?.durationMs ?: 0L
+        LrecFormatDetector.Format.BLOCK -> lrecParser?.getDurationMs() ?: 0L
+        else -> lrecParser?.getDurationMs() ?: aviResult?.durationMs ?: 0L
+    }
+
+    private fun getFps(): Int {
+        return when (detectedFormat) {
+            LrecFormatDetector.Format.AVI -> {
+                val fps = aviResult?.videoStream?.fps ?: 25.0
+                fps.toInt().coerceAtLeast(1)
+            }
+            else -> lrecParser?.metadata?.fps?.let {
+                if (it <= 0) LrecParser.DEFAULT_FPS else it
+            } ?: LrecParser.DEFAULT_FPS
         }
     }
 
+    private fun getTimeAtFrame(idx: Int): Long {
+        val fps = getFps()
+        return idx.toLong() * 1000L / fps
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  لوحة الدردشة
+    // ══════════════════════════════════════════════════════════════════
+
     private fun setupChatPanel() {
-        if (chatEntries.isNotEmpty()) {
-            chatAdapter = ChatAdapter(chatEntries)
+        val messages = chatManager.allMessages
+        if (messages.isNotEmpty()) {
+            // تحويل إلى ChatEntry للـ adapter
+            val entries = messages.map { msg ->
+                LrecParser.ChatEntry(msg.timestampMs, msg.sender, msg.text, true)
+            }
+            chatAdapter = ChatAdapter(entries)
             chatRecycler.adapter    = chatAdapter
             tvChatStatus.visibility = View.GONE
             chatRecycler.visibility = View.VISIBLE
             btnChat.setColorFilter(Color.parseColor("#4FC3F7"))
         } else {
-            val parser = lrecParser
-            tvChatStatus.text = if (parser != null && parser.hasChatBlocks)
-                "⚠️ ${parser.chatBlockCount} كتلة دردشة\nلم يتم فكّ ترميزها"
-            else "لا توجد رسائل دردشة"
+            tvChatStatus.text       = "لا توجد رسائل دردشة"
             tvChatStatus.visibility = View.VISIBLE
             chatRecycler.visibility = View.GONE
-            btnChat.alpha = 0.5f
+            btnChat.alpha           = 0.5f
         }
     }
 
@@ -266,7 +420,7 @@ class LrecPlayerActivity : AppCompatActivity() {
         chatPanel.translationX = chatPanel.width.toFloat()
         chatPanel.animate().alpha(1f).translationX(0f).setDuration(250).start()
         btnChat.setColorFilter(Color.parseColor("#4FC3F7"))
-        syncChatToFrame(frameIndex.get())
+        syncChatToTime(getTimeAtFrame(frameIndex.get()))
     }
 
     private fun hideChatPanel() {
@@ -277,19 +431,20 @@ class LrecPlayerActivity : AppCompatActivity() {
             .setDuration(200)
             .withEndAction { chatPanel.visibility = View.GONE }
             .start()
-        if (chatEntries.isEmpty()) btnChat.clearColorFilter()
     }
 
-    private fun syncChatToFrame(frameIdx: Int) {
-        if (!chatPanelVisible || chatEntries.isEmpty()) return
-        val parser = lrecParser ?: return
-        val fps    = parser.metadata.fps.let { if (it <= 0) LrecParser.DEFAULT_FPS else it }
-        val timeMs = frameIdx.toLong() * 1000L / fps
+    private fun syncChatToTime(timeMs: Long) {
+        if (!chatPanelVisible || chatManager.messageCount == 0) return
+        val messages  = chatManager.allMessages
         val adapter   = chatAdapter ?: return
-        val activeIdx = chatEntries.indexOfLast { it.timestampMs <= timeMs }
+        val activeIdx = messages.indexOfLast { it.timestampMs <= timeMs }
         adapter.setActiveIndex(activeIdx)
         if (activeIdx >= 0) chatRecycler.scrollToPosition(activeIdx)
     }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  التشغيل
+    // ══════════════════════════════════════════════════════════════════
 
     private fun togglePlayPause() {
         if (isPlaying.get()) pausePlayback() else startPlayback()
@@ -297,38 +452,23 @@ class LrecPlayerActivity : AppCompatActivity() {
     }
 
     private fun startPlayback() {
-        if (!isParsed.get() || frames.isEmpty()) return
+        if (!isParsed.get() || getTotalFrames() == 0) return
         if (isPlaying.get()) return
-        if (frameIndex.get() >= frames.size) frameIndex.set(0)
+        if (frameIndex.get() >= getTotalFrames()) frameIndex.set(0)
 
         isPlaying.set(true)
         btnPlayPause.setImageResource(R.drawable.ic_pause)
 
-        if (audioEnabled && audioBlocks.isNotEmpty()) {
-            val parser = lrecParser
-            val fps    = parser?.metadata?.fps?.let {
-                if (it <= 0) LrecParser.DEFAULT_FPS else it } ?: LrecParser.DEFAULT_FPS
-            val currentTimeMs = frameIndex.get().toLong() * 1000L / fps
-            val startIdx = audioBlocks.indexOfFirst {
-                it.timestampMs >= currentTimeMs }.coerceAtLeast(0)
-            audioPlayer.startPlayback(
-                audioBlocks = audioBlocks.map { it.rawData },
-                startIndex  = startIdx,
-                dataOffset  = audioBlocks.firstOrNull()?.dataOffset ?: 8,
-                codec       = detectedCodec
-            )
-        }
+        startAudioPlayback()
+        chatManager.resetCursor(getTimeAtFrame(frameIndex.get()))
 
-        val parser = lrecParser ?: return
+        val fps          = getFps()
+        val frameDelayMs = (1000L / fps).coerceAtLeast(16L)
 
         playThread = Thread {
-            val fps          = parser.metadata.fps.let {
-                if (it <= 0) LrecParser.DEFAULT_FPS else it }
-            val frameDelayMs = (1000L / fps).coerceAtLeast(33L)
-
             while (isPlaying.get()) {
                 val idx = frameIndex.get()
-                if (idx >= frames.size) {
+                if (idx >= getTotalFrames()) {
                     uiHandler.post {
                         isPlaying.set(false)
                         audioPlayer.stop()
@@ -338,17 +478,25 @@ class LrecPlayerActivity : AppCompatActivity() {
                     break
                 }
 
-                val frame     = frames[idx]
-                val frameData = try { parser.decodeScreenFrame(frame) }
-                                catch (_: Exception) { null }
+                val timeMs = getTimeAtFrame(idx)
+                audioPlayer.syncVideoTime(timeMs)
+
+                // ── فك إطار الفيديو ──────────────────────────────────
+                val argbPixels: IntArray? = decodeFrameAt(idx, timeMs)
+
                 val wBmp = workBitmap
                 val dBmp = displayBitmap
 
-                if (frameData != null && wBmp != null && dBmp != null) {
-                    parser.applyFrameToBitmap(wBmp, frameData)
+                if (argbPixels != null && wBmp != null && dBmp != null) {
+                    wBmp.setPixels(argbPixels, 0, wBmp.width, 0, 0,
+                        minOf(argbPixels.size / wBmp.height, wBmp.width),
+                        wBmp.height)
                     val canvas = android.graphics.Canvas(dBmp)
                     canvas.drawBitmap(wBmp, 0f, 0f, null)
                 }
+
+                // ── رسائل الدردشة الجديدة ────────────────────────────
+                val newMsgs = chatManager.getNewMessages(timeMs)
 
                 val snap       = dBmp
                 val currentIdx = frameIndex.incrementAndGet()
@@ -356,13 +504,114 @@ class LrecPlayerActivity : AppCompatActivity() {
                 uiHandler.post {
                     if (snap != null) imageView.setImageBitmap(snap)
                     updateProgressUI(currentIdx)
-                    if (chatPanelVisible) syncChatToFrame(currentIdx)
+                    if (chatPanelVisible && newMsgs.isNotEmpty()) {
+                        syncChatToTime(timeMs)
+                    }
                 }
 
                 try { Thread.sleep(frameDelayMs) }
                 catch (_: InterruptedException) { break }
             }
         }.also { it.start() }
+    }
+
+    private fun startAudioPlayback() {
+        if (!audioEnabled) return
+
+        val fps           = getFps()
+        val currentTimeMs = getTimeAtFrame(frameIndex.get())
+
+        when (detectedFormat) {
+            LrecFormatDetector.Format.BLOCK -> {
+                if (audioBlocks.isEmpty()) return
+                val startIdx = audioBlocks.indexOfFirst {
+                    it.timestampMs >= currentTimeMs }.coerceAtLeast(0)
+                audioPlayer.startPlayback(
+                    audioBlocks = audioBlocks.map { it.rawData },
+                    startIndex  = startIdx,
+                    dataOffset  = audioBlocks.firstOrNull()?.dataOffset ?: 8,
+                    codec       = detectedCodec
+                )
+            }
+            LrecFormatDetector.Format.AVI -> {
+                val result = aviResult ?: return
+                val raf    = aviRaf    ?: return
+                val chunks = result.audioChunks
+                if (chunks.isEmpty()) return
+                val startIdx = chunks.indexOfFirst {
+                    it.timestampMs >= currentTimeMs }.coerceAtLeast(0)
+                val audioData = chunks.drop(startIdx).map { chunk ->
+                    try {
+                        val data = ByteArray(chunk.size)
+                        raf.seek(chunk.offset)
+                        raf.read(data)
+                        data
+                    } catch (e: Exception) { ByteArray(0) }
+                }
+                audioPlayer.startPlayback(
+                    audioBlocks = audioData,
+                    startIndex  = 0,
+                    dataOffset  = 0,
+                    codec       = detectedCodec
+                )
+            }
+            else -> { }
+        }
+    }
+
+    // ── فك إطار الفيديو حسب الصيغة ──────────────────────────────────
+
+    private fun decodeFrameAt(idx: Int, timeMs: Long): IntArray? {
+        return when (detectedFormat) {
+            LrecFormatDetector.Format.BLOCK -> decodeBlockFrame(idx)
+            LrecFormatDetector.Format.AVI   -> decodeAviFrame(idx, timeMs)
+            else -> decodeBlockFrame(idx) ?: decodeAviFrame(idx, timeMs)
+        }
+    }
+
+    private fun decodeBlockFrame(idx: Int): IntArray? {
+        val parser = lrecParser ?: return null
+        val frame  = frames.getOrNull(idx) ?: return null
+        val fd     = try { parser.decodeScreenFrame(frame) } catch (_: Exception) { null }
+                     ?: return null
+        val wBmp   = workBitmap ?: return null
+        val result = IntArray(wBmp.width * wBmp.height)
+        if (fd.isFullFrame) {
+            System.arraycopy(fd.pixels, 0, result, 0,
+                minOf(fd.pixels.size, result.size))
+        } else {
+            // دلتا — نحتاج الصورة السابقة محفوظة في workBitmap
+            val temp = IntArray(wBmp.width * wBmp.height)
+            wBmp.getPixels(temp, 0, wBmp.width, 0, 0, wBmp.width, wBmp.height)
+            val safeX = fd.x.coerceIn(0, wBmp.width  - 1)
+            val safeY = fd.y.coerceIn(0, wBmp.height - 1)
+            val safeW = fd.width .coerceAtMost(wBmp.width  - safeX)
+            val safeH = fd.height.coerceAtMost(wBmp.height - safeY)
+            for (row in 0 until safeH) {
+                for (col in 0 until safeW) {
+                    val dstIdx = (safeY + row) * wBmp.width + (safeX + col)
+                    val srcIdx = row * fd.width + col
+                    if (dstIdx < temp.size && srcIdx < fd.pixels.size)
+                        temp[dstIdx] = fd.pixels[srcIdx]
+                }
+            }
+            return temp
+        }
+        return result
+    }
+
+    private fun decodeAviFrame(idx: Int, timeMs: Long): IntArray? {
+        val result = aviResult ?: return null
+        val raf    = aviRaf    ?: return null
+        val chunk  = result.videoChunks.getOrNull(idx) ?: return null
+        val decoder = videoDecoder ?: return null
+
+        return try {
+            val data = ByteArray(chunk.size)
+            raf.seek(chunk.offset)
+            raf.read(data)
+            decoder.decodeFrame(data, timeMs * 1000L)
+        } catch (e: Exception) { null }
     }
 
     private fun pausePlayback() {
@@ -374,36 +623,34 @@ class LrecPlayerActivity : AppCompatActivity() {
         btnPlayPause.setImageResource(R.drawable.ic_play)
     }
 
+    // ── التقديم والترجيع ──────────────────────────────────────────────
     private fun seekRelativeSeconds(seconds: Int) {
-        if (!isParsed.get() || frames.isEmpty()) return
-        val parser = lrecParser ?: return
-        val fps    = parser.metadata.fps.let { if (it <= 0) LrecParser.DEFAULT_FPS else it }
-        val newIdx = (frameIndex.get() + seconds * fps).coerceIn(0, frames.size - 1)
+        if (!isParsed.get()) return
+        val fps    = getFps()
+        val newIdx = (frameIndex.get() + seconds * fps).coerceIn(0, getTotalFrames() - 1)
         frameIndex.set(newIdx)
         updateProgressUI(newIdx)
         updateTimeTextUI()
         showControls()
-        syncChatToFrame(newIdx)
 
-        if (audioEnabled && audioBlocks.isNotEmpty() && isPlaying.get()) {
-            val timeMs   = newIdx.toLong() * 1000L / fps
-            val startIdx = audioBlocks.indexOfFirst { it.timestampMs >= timeMs }.coerceAtLeast(0)
+        val timeMs = getTimeAtFrame(newIdx)
+        syncChatToTime(timeMs)
+        chatManager.resetCursor(timeMs)
+
+        if (audioEnabled && isPlaying.get()) {
             audioPlayer.flushQueue()
-            audioBlocks.drop(startIdx).forEach { audioPlayer.enqueueBlock(it.rawData) }
         }
-
         if (!isPlaying.get()) renderCurrentFrameAsync()
     }
 
     private fun renderCurrentFrameAsync() {
-        val parser = lrecParser ?: return
-        val idx    = frameIndex.get().coerceIn(0, frames.size - 1)
-        val frame  = frames.getOrNull(idx) ?: return
+        val idx = frameIndex.get().coerceIn(0, getTotalFrames() - 1)
         Thread {
-            val fd   = try { parser.decodeScreenFrame(frame) } catch (_: Exception) { null }
-            val wBmp = workBitmap; val dBmp = displayBitmap
-            if (fd != null && wBmp != null && dBmp != null) {
-                parser.applyFrameToBitmap(wBmp, fd)
+            val pixels = decodeFrameAt(idx, getTimeAtFrame(idx))
+            val wBmp   = workBitmap
+            val dBmp   = displayBitmap
+            if (pixels != null && wBmp != null && dBmp != null) {
+                wBmp.setPixels(pixels, 0, wBmp.width, 0, 0, wBmp.width, wBmp.height)
                 val canvas = android.graphics.Canvas(dBmp)
                 canvas.drawBitmap(wBmp, 0f, 0f, null)
                 uiHandler.post { imageView.setImageBitmap(dBmp) }
@@ -411,44 +658,40 @@ class LrecPlayerActivity : AppCompatActivity() {
         }.start()
     }
 
+    // ── حوار المعلومات ────────────────────────────────────────────────
     private fun showInfoDialog() {
         pausePlayback()
-        val parser = lrecParser
-        val m      = parser?.metadata
         val msg = buildString {
             appendLine("📹  معلومات الملف")
-            appendLine()
-            appendLine("• الدقة:  ${canvasWidth}×${canvasHeight}")
-            appendLine("• الإطارات: ${frames.size}")
-            appendLine("• المدة: ${formatTime(parser?.getDurationMs() ?: 0)}")
-            appendLine("• الإصدار: ${m?.version ?: "?"}")
-            if (m?.serverAddr?.isNotEmpty() == true) appendLine("• الخادم: ${m.serverAddr}")
+            appendLine("• الصيغة: ${detectedFormat.name}")
+            appendLine("• الدقة: ${canvasWidth}×${canvasHeight}")
+            appendLine("• الإطارات: ${getTotalFrames()}")
+            appendLine("• المدة: ${formatTime(getDurationMs())}")
             appendLine()
             appendLine("─────────────────────────")
-            appendLine("🔊  الصوت")
-            if (audioBlocks.isNotEmpty()) {
-                appendLine("• الكتل: ${audioBlocks.size}")
-                appendLine("• معدل التردد: ${audioBlocks[0].sampleRate} Hz")
-                appendLine("• الكودك: $detectedCodec")
-                appendLine("✅ الصوت يعمل")
+            appendLine("🔊  الصوت: $audioStatusText")
+            if (audioEnabled) {
+                when (detectedFormat) {
+                    LrecFormatDetector.Format.BLOCK -> {
+                        appendLine("• الكتل: ${audioBlocks.size}")
+                        appendLine("• معدل التردد: ${audioBlocks.firstOrNull()?.sampleRate ?: 8000} Hz")
+                    }
+                    LrecFormatDetector.Format.AVI -> {
+                        val af = aviResult?.audioFormat
+                        appendLine("• القنوات: ${af?.channels ?: 1}")
+                        appendLine("• معدل التردد: ${af?.sampleRate ?: 8000} Hz")
+                        appendLine("• الكتل: ${aviResult?.audioChunks?.size ?: 0}")
+                    }
+                    else -> { }
+                }
+                appendLine("✅ يعمل")
             } else {
-                appendLine("• مكتشف: ${parser?.audioBlockCount ?: 0} كتلة")
-                appendLine("⚠️ لم يُفكَّ ترميز الصوت")
+                appendLine("⚠️ غير متاح")
             }
             appendLine()
             appendLine("─────────────────────────")
-            appendLine("💬  المحادثة")
-            when {
-                chatEntries.isNotEmpty() -> {
-                    appendLine("• الرسائل: ${chatEntries.size}")
-                    appendLine("✅ تم الاستخراج")
-                }
-                parser?.hasChatBlocks == true -> {
-                    appendLine("• الكتل: ${parser.chatBlockCount}")
-                    appendLine("⚠️ لم يُفكَّ الترميز")
-                }
-                else -> appendLine("لا توجد رسائل")
-            }
+            appendLine("💬  الدردشة: ${chatManager.messageCount} رسالة")
+            if (chatManager.messageCount > 0) appendLine("✅ تم الاستخراج")
         }.trim()
 
         AlertDialog.Builder(this)
@@ -459,16 +702,19 @@ class LrecPlayerActivity : AppCompatActivity() {
         showControls()
     }
 
+    // ══════════════════════════════════════════════════════════════════
+    //  مساعدات الواجهة
+    // ══════════════════════════════════════════════════════════════════
+
     private fun updateProgressUI(idx: Int) {
-        if (frames.isEmpty()) return
-        seekBar.progress = (idx.toLong() * 1000L / frames.size).toInt().coerceIn(0, 1000)
+        val total = getTotalFrames()
+        if (total == 0) return
+        seekBar.progress = (idx.toLong() * 1000L / total).toInt().coerceIn(0, 1000)
         updateTimeTextUI()
     }
 
     private fun updateTimeTextUI() {
-        val parser = lrecParser ?: return
-        val fps    = parser.metadata.fps.let { if (it <= 0) LrecParser.DEFAULT_FPS else it }
-        tvCurrentTime.text = formatTime(frameIndex.get().toLong() * 1000L / fps)
+        tvCurrentTime.text = formatTime(getTimeAtFrame(frameIndex.get()))
     }
 
     private fun showControls() {
@@ -503,10 +749,6 @@ class LrecPlayerActivity : AppCompatActivity() {
             tvStatus.text = message
         } else {
             loadingOverlay.visibility = View.GONE
-            if (message.isNotEmpty()) {
-                tvStatus.text       = message
-                tvStatus.visibility = View.VISIBLE
-            }
         }
     }
 
@@ -544,6 +786,10 @@ class LrecPlayerActivity : AppCompatActivity() {
         return if (h > 0) String.format("%d:%02d:%02d", h, m, sec)
         else              String.format("%02d:%02d", m, sec)
     }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  Adapter الدردشة
+    // ══════════════════════════════════════════════════════════════════
 
     private inner class ChatAdapter(
         private val entries: List<LrecParser.ChatEntry>
