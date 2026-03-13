@@ -363,8 +363,8 @@ class LrecAviParser(private val file: File) {
 
                 when (streamIdx) {
                     0 -> videoCount++
-                    1 -> audioSamples += if (audioFormat.sampleSize > 0)
-                            chunkSize.toLong()
+                    1 -> audioSamples += if (audioFormat.bitsPerSample > 0)
+                         chunkSize.toLong()
                          else chunkSize.toLong()
                 }
             }
