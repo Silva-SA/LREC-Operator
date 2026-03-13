@@ -5,72 +5,58 @@ import android.media.AudioFormat
 import android.media.AudioTrack
 import android.util.Log
 
+/**
+ * مشغّل صوت بـ AudioTrack:
+ * - خيط مستهلك منفصل مع قائمة تخزين مؤقت
+ * - مزامنة مع timeline الفيديو
+ * - flush فوري عند البحث (seek)
+ * - يدعم G.711 μ-law / A-law / PCM عبر G711Codec
+ */
 class LrecAudioPlayer {
 
     companion object {
         private const val TAG = "LrecAudioPlayer"
-
-        private val ULAW_TABLE: ShortArray = ShortArray(256) { i ->
-            val ulaw  = (i xor 0xFF) and 0xFF
-            val sign  = ulaw and 0x80
-            val exp   = (ulaw shr 4) and 0x07
-            val mant  = ulaw and 0x0F
-            var value = ((mant + 33) shl (exp + 2)) - 132
-            value     = if (sign != 0) -value else value
-            value.coerceIn(-32768, 32767).toShort()
-        }
-
-        private val ALAW_TABLE: ShortArray = ShortArray(256) { i ->
-            val alaw  = (i xor 0x55) and 0xFF
-            val sign  = alaw and 0x80
-            val exp   = (alaw shr 4) and 0x07
-            val mant  = alaw and 0x0F
-            val value = when (exp) {
-                0    -> (mant shl 1) or 1
-                else -> ((mant or 0x10) shl 1 or 1) shl (exp - 1)
-            }
-            val signed = if (sign != 0) value else -value
-            (signed * 8).coerceIn(-32768, 32767).toShort()
-        }
-
-        private const val GAIN = 3.0f
-
-        fun decodeUlaw(input: ByteArray, offset: Int, length: Int): ShortArray {
-            val out = ShortArray(length)
-            for (i in 0 until length) {
-                out[i] = ULAW_TABLE[input[offset + i].toInt() and 0xFF]
-            }
-            return out
-        }
-
-        fun decodeAlaw(input: ByteArray, offset: Int, length: Int): ShortArray {
-            val out = ShortArray(length)
-            for (i in 0 until length) {
-                out[i] = ALAW_TABLE[input[offset + i].toInt() and 0xFF]
-            }
-            return out
-        }
-
-        private fun applyGain(samples: ShortArray): ShortArray {
-            return ShortArray(samples.size) { i ->
-                (samples[i] * GAIN).toInt().coerceIn(-32768, 32767).toShort()
-            }
-        }
     }
 
-    enum class AudioCodec { ULAW, ALAW, PCM16 }
+    enum class AudioCodec { ULAW, ALAW, PCM8, PCM16 }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  الحالة الداخلية
+    // ══════════════════════════════════════════════════════════════════
 
     private var audioTrack:   AudioTrack? = null
     private var isPlaying     = false
     private var isPaused      = false
     private var audioThread:  Thread? = null
-    private var currentCodec  = AudioCodec.ULAW
 
-    private val audioQueue = ArrayDeque<ByteArray>()
-    private val queueLock  = Object()
+    private var currentCodec      = AudioCodec.ULAW
+    private var currentGain       = 3.0f
+    private var currentSampleRate = 8000
+    private var currentDataOffset = 8
+
+    // ── قائمة الانتظار مع مزامنة ──────────────────────────────────────
+    private val audioQueue   = ArrayDeque<ByteArray>()
+    private val queueLock    = Object()
+
+    // مزامنة مع الفيديو
+    @Volatile private var videoTimeMs  = 0L
+    @Volatile private var audioTimeMs  = 0L
+
+    val codecName: String get() = when (currentCodec) {
+        AudioCodec.ULAW  -> "G.711 μ-law"
+        AudioCodec.ALAW  -> "G.711 A-law"
+        AudioCodec.PCM8  -> "PCM 8-bit"
+        AudioCodec.PCM16 -> "PCM 16-bit"
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  تهيئة AudioTrack
+    // ══════════════════════════════════════════════════════════════════
 
     fun initialize(sampleRate: Int = 8000, stereo: Boolean = false) {
         release()
+        currentSampleRate = sampleRate
+
         val channelConfig = if (stereo)
             AudioFormat.CHANNEL_OUT_STEREO
         else
@@ -100,27 +86,35 @@ class LrecAudioPlayer {
                 .setTransferMode(AudioTrack.MODE_STREAM)
                 .build()
 
-            Log.d(TAG, "✅ AudioTrack: ${sampleRate}Hz | codec=$currentCodec")
+            Log.d(TAG, "✅ AudioTrack: ${sampleRate}Hz | $channelConfig")
         } catch (e: Exception) {
             Log.e(TAG, "❌ فشل: ${e.message}")
             audioTrack = null
         }
     }
 
+    // ══════════════════════════════════════════════════════════════════
+    //  تشغيل الصوت
+    // ══════════════════════════════════════════════════════════════════
+
     fun startPlayback(
         audioBlocks: List<ByteArray>,
-        startIndex:  Int = 0,
-        dataOffset:  Int = 8,
-        codec:       AudioCodec = AudioCodec.ULAW
+        startIndex:  Int        = 0,
+        dataOffset:  Int        = 8,
+        codec:       AudioCodec = AudioCodec.ULAW,
+        gain:        Float      = 3.0f
     ) {
         if (audioTrack == null) initialize()
         if (isPlaying) return
 
-        currentCodec = codec
-        isPlaying    = true
-        isPaused     = false
+        currentCodec      = codec
+        currentGain       = gain
+        currentDataOffset = dataOffset
+        isPlaying         = true
+        isPaused          = false
+        audioTimeMs       = 0L
 
-        Log.d(TAG, "▶ تشغيل: ${audioBlocks.size} كتلة | codec=$codec | offset=$dataOffset")
+        Log.d(TAG, "▶ ${audioBlocks.size} كتلة | codec=$codecName | offset=$dataOffset")
 
         synchronized(queueLock) {
             audioQueue.clear()
@@ -130,11 +124,17 @@ class LrecAudioPlayer {
         }
 
         audioTrack?.play()
-        audioThread = Thread { processQueue(dataOffset) }.also { it.start() }
+        audioThread = Thread { processQueue() }.also { it.start() }
     }
 
-    private fun processQueue(dataOffset: Int) {
+    private fun processQueue() {
         while (isPlaying) {
+            // ── مزامنة مع الفيديو: انتظر إذا تقدّم الصوت ──────────────
+            if (audioTimeMs > videoTimeMs + 200) {
+                Thread.sleep(20)
+                continue
+            }
+
             val block: ByteArray?
             synchronized(queueLock) {
                 block = if (audioQueue.isNotEmpty()) audioQueue.removeFirst() else null
@@ -145,46 +145,66 @@ class LrecAudioPlayer {
             while (isPaused && isPlaying) Thread.sleep(10)
             if (!isPlaying) break
 
-            val offset = dataOffset.coerceIn(0, block.size - 1)
+            val offset = currentDataOffset.coerceIn(0, block.size - 1)
             val len    = block.size - offset
             if (len < 4) continue
 
             try {
-                val pcmRaw: ShortArray = when (currentCodec) {
-                    AudioCodec.ULAW  -> decodeUlaw(block, offset, len)
-                    AudioCodec.ALAW  -> decodeAlaw(block, offset, len)
-                    AudioCodec.PCM16 -> ShortArray(len / 2) { i ->
-                        val lo = block[offset + i * 2].toInt()     and 0xFF
-                        val hi = block[offset + i * 2 + 1].toInt() and 0xFF
-                        ((hi shl 8) or lo).toShort()
-                    }
+                val g711Codec = when (currentCodec) {
+                    AudioCodec.ULAW  -> G711Codec.Codec.ULAW
+                    AudioCodec.ALAW  -> G711Codec.Codec.ALAW
+                    AudioCodec.PCM8  -> G711Codec.Codec.PCM8
+                    AudioCodec.PCM16 -> G711Codec.Codec.PCM16
                 }
-                val pcm = applyGain(pcmRaw)
+
+                val pcm = G711Codec.decode(block, offset, len, g711Codec, currentGain)
                 audioTrack?.write(pcm, 0, pcm.size)
+
+                // تحديث وقت الصوت
+                audioTimeMs += (len.toLong() * 1000L / currentSampleRate)
+
             } catch (e: Exception) {
                 Log.w(TAG, "خطأ: ${e.message}")
             }
         }
     }
 
+    // ══════════════════════════════════════════════════════════════════
+    //  اكتشاف الكودك
+    // ══════════════════════════════════════════════════════════════════
+
     fun detectBestCodec(sampleBlocks: List<ByteArray>, dataOffset: Int): AudioCodec {
         if (sampleBlocks.isEmpty()) return AudioCodec.ULAW
-        var ulawScore = 0
-        var alawScore = 0
-        var checked   = 0
+
+        // جمّع عينات من أول 10 كتل
+        val sampleData = mutableListOf<Byte>()
         for (block in sampleBlocks.take(10)) {
             val off = dataOffset.coerceIn(0, block.size - 1)
-            val end = (off + 200).coerceAtMost(block.size)
-            for (i in off until end) {
-                val v = block[i].toInt() and 0xFF
-                if (v >= 0x80) ulawScore++
-                if (v in 0x40..0xBF) alawScore++
-                checked++
-            }
+            val end = minOf(off + 200, block.size)
+            for (i in off until end) sampleData.add(block[i])
         }
-        Log.d(TAG, "codec detection: ulaw=$ulawScore alaw=$alawScore")
-        return if (alawScore > ulawScore * 1.5) AudioCodec.ALAW else AudioCodec.ULAW
+
+        if (sampleData.isEmpty()) return AudioCodec.ULAW
+
+        val arr   = sampleData.toByteArray()
+        val codec = G711Codec.detectCodec(arr)
+
+        Log.d(TAG, "codec مكتشف: $codec")
+
+        return when (codec) {
+            G711Codec.Codec.ALAW  -> AudioCodec.ALAW
+            G711Codec.Codec.PCM8  -> AudioCodec.PCM8
+            G711Codec.Codec.PCM16 -> AudioCodec.PCM16
+            else                  -> AudioCodec.ULAW
+        }
     }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  واجهة التحكم
+    // ══════════════════════════════════════════════════════════════════
+
+    /** تحديث وقت الفيديو للمزامنة */
+    fun syncVideoTime(timeMs: Long) { videoTimeMs = timeMs }
 
     fun enqueueBlock(blockData: ByteArray) {
         synchronized(queueLock) { audioQueue.addLast(blockData) }
@@ -192,6 +212,7 @@ class LrecAudioPlayer {
 
     fun flushQueue() {
         synchronized(queueLock) { audioQueue.clear() }
+        audioTimeMs = videoTimeMs
         try { audioTrack?.flush() } catch (e: Exception) { }
     }
 
