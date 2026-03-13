@@ -130,8 +130,8 @@ class LrecVideoDecoder(
                 val uvIdx = ySize + (j / 2) * (outputWidth / 2) + (i / 2)
 
                 val y = (yuv.getOrElse(yIdx)  { 0 }.toInt() and 0xFF)
-                val u = (yuv.getOrElse(uvIdx)  { 128 }.toInt() and 0xFF) - 128
-                val v = (yuv.getOrElse(uvIdx + uvSize) { 128 }.toInt() and 0xFF) - 128
+               val u = (yuv.getOrElse(uvIdx)  { 128.toByte() }.toInt() and 0xFF) - 128
+               val v = (yuv.getOrElse(uvIdx + uvSize) { 128.toByte() }.toInt() and 0xFF) - 128
 
                 val r = (y + 1.402f * v).toInt().coerceIn(0, 255)
                 val g = (y - 0.344f * u - 0.714f * v).toInt().coerceIn(0, 255)
